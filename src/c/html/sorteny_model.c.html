@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sorteny_model.c - SORTENY Encoder</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <style>
+        :root {
+            --bg: #f6f8fa;
+            --border: #d0d7de;
+            --text: #24292f;
+            --header-bg: #2c3e50;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        .header {
+            background: var(--header-bg);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 1.25rem; font-weight: 600; }
+        .header a { color: #58a6ff; text-decoration: none; }
+        .header a:hover { text-decoration: underline; }
+        .file-info {
+            background: white;
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 2rem;
+            font-size: 0.875rem;
+            color: #57606a;
+        }
+        .code-container {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin: 1rem 2rem;
+            overflow: hidden;
+        }
+        pre {
+            margin: 0;
+            padding: 1rem;
+            overflow-x: auto;
+            font-size: 0.875rem;
+            line-height: 1.45;
+        }
+        code {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+        .hljs { background: white !important; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📄 sorteny_model.c</h1>
+        <a href="../../../index.html">← Tornar a l'índex</a>
+    </div>
+    <div class="file-info">
+        <strong>Ruta:</strong> src/c/sorteny_model.c &nbsp;|&nbsp;
+        <strong>Descripció:</strong> Càrrega de pesos del model des del weights_index.tsv. Gestiona la memòria i el mapatge de tensors.
+    </div>
+    <div class="code-container">
+        <pre><code class="language-c">#include "sorteny_model.h"
+#include &lt;string.h&gt;
+
+// --- Constantes Internas ---
+#define LINE_BUFFER_SIZE 1024
+#define PATH_BUFFER_SIZE 256
+
+/**
+ * @brief Función auxiliar interna para cargar un único tensor desde un .bin.
+ */
+static float* load_tensor_from_file(const char* base_path, const char* filename, size_t expected_bytes) {
+    char file_path[PATH_BUFFER_SIZE];
+    snprintf(file_path, sizeof(file_path), "%s/%s", base_path, filename);
+
+    FILE* f = fopen(file_path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: No se pudo abrir el archivo de peso: %s\n", file_path);
+        return NULL;
+    }
+
+    float* data_ptr = (float*)malloc(expected_bytes);
+    if (!data_ptr) {
+        fprintf(stderr, "Error: Fallo de Malloc al reservar %zu bytes para %s\n", expected_bytes, filename);
+        fclose(f);
+        return NULL;
+    }
+
+    size_t bytes_read = fread(data_ptr, 1, expected_bytes, f);
+    if (bytes_read != expected_bytes) {
+        fprintf(stderr, "Error: Lectura incompleta de %s. Esperados %zu, leídos %zu\n",
+                filename, expected_bytes, bytes_read);
+        fclose(f);
+        free(data_ptr);
+        return NULL;
+    }
+
+    fclose(f);
+    return data_ptr;
+}
+
+// --- Utilidades de parseo ---
+
+static int dtype_sizeof(const char* dtype, size_t* out) {
+    if (!dtype || !out) return -1;
+    if (strcmp(dtype, "float32") == 0) { *out = sizeof(float); return 0; }
+    fprintf(stderr, "Error: dtype no soportado: %s (se esperaba float32)\n", dtype);
+    return -1;
+}
+
+static int parse_shape_dims(const char* shape_str, size_t* dims, size_t max_dims, size_t* out_ndims) {
+    if (!shape_str || !dims || !out_ndims) return -1;
+    char buf[LINE_BUFFER_SIZE];
+    strncpy(buf, shape_str, sizeof(buf));
+    buf[sizeof(buf)-1] = '\0';
+    size_t count = 0;
+    char* p = buf;
+    while (*p &amp;&amp; count &lt; max_dims) {
+        char* end = NULL;
+        dims[count] = (size_t)strtoull(p, &amp;end, 10);
+        if (end == p) return -1;
+        count++;
+        if (*end == 'x' || *end == 'X') {
+            p = end + 1;
+        } else {
+            break;
+        }
+    }
+    *out_ndims = count;
+    return (count &gt; 0) ? 0 : -1;
+}
+
+static int compute_expected_bytes(const char* dtype, const char* shape_str, size_t* out_bytes) {
+    size_t sz; if (dtype_sizeof(dtype, &amp;sz) != 0) return -1;
+    size_t dims[8]; size_t nd=0;
+    if (parse_shape_dims(shape_str, dims, 8, &amp;nd) != 0) return -1;
+    unsigned __int128 prod = 1;
+    for (size_t i = 0; i &lt; nd; ++i) prod *= dims[i];
+    size_t elems = (size_t)prod;
+    *out_bytes = elems * sz;
+    return 0;
+}
+
+/**
+ * @brief Transpone el layout de memoria de [kH][kW][DimA][DimB] a [kH][kW][DimB][DimA].
+ */
+static void transpose_kernel_layout(float* kernel, size_t kH, size_t kW, size_t dimA, size_t dimB) {
+    size_t matrix_size = dimA * dimB;
+    size_t k_count = kH * kW;
+    float* temp = (float*)malloc(matrix_size * sizeof(float));
+    if (!temp) {
+        fprintf(stderr, "Error: Fallo de malloc en transpose_kernel_layout\n");
+        return;
+    }
+
+    for (size_t k = 0; k &lt; k_count; k++) {
+        float* matrix_ptr = kernel + (k * matrix_size);
+        memcpy(temp, matrix_ptr, matrix_size * sizeof(float));
+        for (size_t i = 0; i &lt; dimA; i++) {
+            for (size_t j = 0; j &lt; dimB; j++) {
+                matrix_ptr[j * dimA + i] = temp[i * dimB + j];
+            }
+        }
+    }
+    free(temp);
+}
+
+
+/**
+ * @brief Lee el 'weights_index.tsv' y puebla la estructura SORTENY_Model.
+ */
+SORTENY_Model* load_model_weights(const char* base_path) {
+    int conv_dims_swapped = (base_path &amp;&amp; strstr(base_path, "transposed") != NULL);
+    char index_path[PATH_BUFFER_SIZE];
+    snprintf(index_path, sizeof(index_path), "%s/weights_index.tsv", base_path);
+
+    FILE* f_index = fopen(index_path, "r");
+    if (!f_index) {
+        fprintf(stderr, "Error: No se pudo abrir 'weights_index.tsv' en %s\n", base_path);
+        return NULL;
+    }
+
+    SORTENY_Model* model = (SORTENY_Model*)malloc(sizeof(SORTENY_Model));
+    if (!model) {
+        fprintf(stderr, "Error: Fallo de Malloc para SORTENY_Model\n");
+        fclose(f_index);
+        return NULL;
+    }
+    memset(model, 0, sizeof(SORTENY_Model));
+
+    char line[LINE_BUFFER_SIZE];
+    
+    if (fgets(line, sizeof(line), f_index) == NULL) {
+        fprintf(stderr, "Error: Archivo 'weights_index.tsv' está vacío.\n");
+        fclose(f_index);
+        free_model_weights(model);
+        return NULL;
+    }
+
+    while (fgets(line, sizeof(line), f_index) != NULL) {
+        char* filename = strtok(line, "\t");
+        char* dtype = strtok(NULL, "\t");
+        char* size_bytes_str = strtok(NULL, "\t");
+        char* shape_str = strtok(NULL, "\t");
+
+        if (!filename || !dtype || !size_bytes_str || !shape_str) continue;
+
+        size_t declared_bytes = (size_t)strtoull(size_bytes_str, NULL, 10);
+        size_t expected_bytes = 0;
+        if (compute_expected_bytes(dtype, shape_str, &amp;expected_bytes) != 0) {
+            fprintf(stderr, "Error: No se pudo calcular expected_bytes para %s\n", filename);
+            free_model_weights(model);
+            fclose(f_index);
+            return NULL;
+        }
+        if (declared_bytes != expected_bytes) {
+            fprintf(stderr, "Aviso: size_bytes declarado (%zu) difiere del esperado (%zu) para %s.\n",
+                    declared_bytes, expected_bytes, filename);
+        }
+        float* data_ptr = load_tensor_from_file(base_path, filename, expected_bytes);
+        
+        if (data_ptr == NULL) {
+            free_model_weights(model);
+            fclose(f_index);
+            return NULL;
+        }
+
+        // --- MAPEO DE NOMBRES A ESTRUCTURAS ---
+        
+        // 1. Spectral Analysis
+        if (strcmp(filename, "spectral_analysis_kernel.bin") == 0 ||
+            strcmp(filename, "spectral__layer_with_weights-0_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;spectral_an.dense.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd == 2) {
+                model-&gt;spectral_an.dense.C_in = dims[0];
+                model-&gt;spectral_an.dense.C_out = dims[1];
+            }
+        }
+        
+        // 2. Analysis Transform - Layer 0
+        else if (strcmp(filename, "analysis_conv_0_kernel.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_3_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_4_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.conv_0.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd == 4) {
+                model-&gt;analysis_an.conv_0.kH = dims[0];
+                model-&gt;analysis_an.conv_0.kW = dims[1];
+                if (conv_dims_swapped) {
+                    model-&gt;analysis_an.conv_0.C_in = dims[3];
+                    model-&gt;analysis_an.conv_0.C_out = dims[2];
+                    transpose_kernel_layout(data_ptr, dims[0], dims[1], dims[2], dims[3]);
+                } else {
+                    model-&gt;analysis_an.conv_0.C_in = dims[2]; 
+                    model-&gt;analysis_an.conv_0.C_out = dims[3];
+                }
+            }
+            model-&gt;analysis_an.conv_0.stride = 2;
+        } else if (strcmp(filename, "analysis_conv_0_bias.bin") == 0 ||
+                   strcmp(filename, "analysis__layer_with_weights-0__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.conv_0.bias = data_ptr;
+            model-&gt;analysis_an.conv_0.has_bias = 1;
+        } else if (strcmp(filename, "analysis_gdn_0_beta.bin") == 0 ||
+                   strcmp(filename, "analysis__variables_1_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.gdn_0.beta = data_ptr;
+            size_t dims[4], nd=0;
+            if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd &gt;= 1) {
+                model-&gt;analysis_an.gdn_0.C = dims[0];
+            }
+            model-&gt;analysis_an.gdn_0.epsilon = 1.0f;
+        } else if (strcmp(filename, "analysis_gdn_0_gamma.bin") == 0 ||
+                   strcmp(filename, "analysis__variables_2_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.gdn_0.gamma = data_ptr;
+            model-&gt;analysis_an.gdn_0.epsilon = 1.0f;
+        } 
+        
+        // Layer 1
+        else if (strcmp(filename, "analysis_conv_1_kernel.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_8_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_9_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.conv_1.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd == 4) {
+                model-&gt;analysis_an.conv_1.kH = dims[0];
+                model-&gt;analysis_an.conv_1.kW = dims[1];
+                if (conv_dims_swapped) {
+                    model-&gt;analysis_an.conv_1.C_in = dims[3];
+                    model-&gt;analysis_an.conv_1.C_out = dims[2];
+                    transpose_kernel_layout(data_ptr, dims[0], dims[1], dims[2], dims[3]);
+                } else {
+                    model-&gt;analysis_an.conv_1.C_in = dims[2];
+                    model-&gt;analysis_an.conv_1.C_out = dims[3];
+                }
+            }
+            model-&gt;analysis_an.conv_1.stride = 2;
+        } else if (strcmp(filename, "analysis_conv_1_bias.bin") == 0 ||
+                   strcmp(filename, "analysis__layer_with_weights-1__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.conv_1.bias = data_ptr;
+            model-&gt;analysis_an.conv_1.has_bias = 1;
+        } else if (strcmp(filename, "analysis_gdn_1_beta.bin") == 0 ||
+                   strcmp(filename, "analysis__variables_6_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.gdn_1.beta = data_ptr;
+            size_t dims[4], nd=0;
+            if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd &gt;= 1) {
+                model-&gt;analysis_an.gdn_1.C = dims[0];
+            }
+            model-&gt;analysis_an.gdn_1.epsilon = 1.0f;
+        } else if (strcmp(filename, "analysis_gdn_1_gamma.bin") == 0 ||
+                   strcmp(filename, "analysis__variables_7_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.gdn_1.gamma = data_ptr;
+            model-&gt;analysis_an.gdn_1.epsilon = 1.0f;
+        }
+
+        // Layer 2
+        else if (strcmp(filename, "analysis_conv_2_kernel.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_13_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_14_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.conv_2.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd == 4) {
+                model-&gt;analysis_an.conv_2.kH = dims[0];
+                model-&gt;analysis_an.conv_2.kW = dims[1];
+                if (conv_dims_swapped) {
+                    model-&gt;analysis_an.conv_2.C_in = dims[3];
+                    model-&gt;analysis_an.conv_2.C_out = dims[2];
+                    transpose_kernel_layout(data_ptr, dims[0], dims[1], dims[2], dims[3]);
+                } else {
+                    model-&gt;analysis_an.conv_2.C_in = dims[2];
+                    model-&gt;analysis_an.conv_2.C_out = dims[3];
+                }
+            }
+            model-&gt;analysis_an.conv_2.stride = 2;
+        } else if (strcmp(filename, "analysis_conv_2_bias.bin") == 0 ||
+                   strcmp(filename, "analysis__layer_with_weights-2__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.conv_2.bias = data_ptr;
+            model-&gt;analysis_an.conv_2.has_bias = 1;
+        } else if (strcmp(filename, "analysis_gdn_2_beta.bin") == 0 ||
+                   strcmp(filename, "analysis__variables_11_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.gdn_2.beta = data_ptr;
+            size_t dims[4], nd=0;
+            if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd &gt;= 1) {
+                model-&gt;analysis_an.gdn_2.C = dims[0];
+            }
+            model-&gt;analysis_an.gdn_2.epsilon = 1.0f;
+        } else if (strcmp(filename, "analysis_gdn_2_gamma.bin") == 0 ||
+                   strcmp(filename, "analysis__variables_12_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.gdn_2.gamma = data_ptr;
+            model-&gt;analysis_an.gdn_2.epsilon = 1.0f;
+        }
+
+        // Layer 3 (Output, no GDN, no bias)
+        else if (strcmp(filename, "analysis_conv_3_kernel.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_15_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0 ||
+                 strcmp(filename, "analysis__variables_16_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;analysis_an.conv_3.kernel = data_ptr;
+            model-&gt;analysis_an.conv_3.has_bias = 0;
+            model-&gt;analysis_an.conv_3.bias = NULL;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd == 4) {
+                model-&gt;analysis_an.conv_3.kH = dims[0];
+                model-&gt;analysis_an.conv_3.kW = dims[1];
+                if (conv_dims_swapped) {
+                    model-&gt;analysis_an.conv_3.C_in = dims[3];
+                    model-&gt;analysis_an.conv_3.C_out = dims[2];
+                    transpose_kernel_layout(data_ptr, dims[0], dims[1], dims[2], dims[3]);
+                } else {
+                    model-&gt;analysis_an.conv_3.C_in = dims[2];
+                    model-&gt;analysis_an.conv_3.C_out = dims[3];
+                }
+            }
+            model-&gt;analysis_an.conv_3.stride = 2;
+        }
+
+        // 3. Modulating Transform
+        else if (strcmp(filename, "mod_dense_1_kernel.bin") == 0 ||
+                 strcmp(filename, "modulating__layer_with_weights-0_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;modulating_mod.dense_0.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd == 2) {
+                model-&gt;modulating_mod.dense_0.C_in = dims[0];
+                model-&gt;modulating_mod.dense_0.C_out = dims[1];
+            }
+        } else if (strcmp(filename, "mod_dense_1_bias.bin") == 0 ||
+                   strcmp(filename, "modulating__layer_with_weights-0_bias_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) { 
+             model-&gt;modulating_mod.dense_0.bias = data_ptr;
+        }
+        else if (strcmp(filename, "mod_dense_2_kernel.bin") == 0 ||
+                 strcmp(filename, "modulating__layer_with_weights-1_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;modulating_mod.dense_1.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &amp;nd) == 0 &amp;&amp; nd == 2) {
+                model-&gt;modulating_mod.dense_1.C_in = dims[0];
+                model-&gt;modulating_mod.dense_1.C_out = dims[1];
+            }
+        } else if (strcmp(filename, "mod_dense_2_bias.bin") == 0 ||
+                   strcmp(filename, "modulating__layer_with_weights-1_bias_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
+            model-&gt;modulating_mod.dense_1.bias = data_ptr;
+        }
+
+        else {
+            fprintf(stderr, "Aviso: Peso '%s' no mapeado. Liberando memoria.\n", filename);
+            free(data_ptr);
+        }
+    }
+
+    fclose(f_index);
+    printf("Modelo cargado exitosamente en memoria.\n");
+    return model;
+}
+
+/**
+ * @brief Libera toda la memoria reservada por load_model_weights.
+ */
+void free_model_weights(SORTENY_Model* model) {
+    if (!model) return;
+
+    // 1. Spectral
+    free(model-&gt;spectral_an.dense.kernel);
+
+    // 2. Analysis
+    free(model-&gt;analysis_an.conv_0.kernel);
+    free(model-&gt;analysis_an.conv_0.bias);
+    free(model-&gt;analysis_an.gdn_0.beta);
+    free(model-&gt;analysis_an.gdn_0.gamma);
+    free(model-&gt;analysis_an.conv_1.kernel);
+    free(model-&gt;analysis_an.conv_1.bias);
+    free(model-&gt;analysis_an.gdn_1.beta);
+    free(model-&gt;analysis_an.gdn_1.gamma);
+    free(model-&gt;analysis_an.conv_2.kernel);
+    free(model-&gt;analysis_an.conv_2.bias);
+    free(model-&gt;analysis_an.gdn_2.beta);
+    free(model-&gt;analysis_an.gdn_2.gamma);
+    free(model-&gt;analysis_an.conv_3.kernel);
+    
+    // 3. Modulating
+    free(model-&gt;modulating_mod.dense_0.kernel);
+    free(model-&gt;modulating_mod.dense_0.bias);
+    free(model-&gt;modulating_mod.dense_1.kernel);
+    free(model-&gt;modulating_mod.dense_1.bias);
+
+    free(model);
+}</code></pre>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

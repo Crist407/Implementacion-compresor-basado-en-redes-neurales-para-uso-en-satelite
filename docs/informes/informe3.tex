@@ -1,0 +1,183 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{url}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{hyperref} 
+\usepackage{booktabs} 
+\usepackage{float}    
+\usepackage[catalan]{babel}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=blue,
+    citecolor=blue,
+}
+
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{4}
+\newcommand{\subsubsubsection}[1]{\paragraph{#1}\mbox{}\\}
+
+\title{Implementació d'un compressor basat en xarxes neuronals per a ús en satèl·lit
+       \vspace{1cm} \\
+       \large \textbf{Informe de Progrés II: Optimització i Avaluació Experimental}}
+\author{Cristhian Omar Añez López \\ 1635157}
+\date{Desembre 2025}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% -------------------------------------------------------------------
+% SECCIÓ 1: SEGUIMENT DE LA PLANIFICACIÓ
+% -------------------------------------------------------------------
+\section{Seguiment de la Planificació i Ajustaments}
+
+Aquest segon informe cobreix l'execució de la Fase 3 (Integració i Optimització) i Fase 4 (Avaluació Experimental) de la planificació original.
+
+\subsection{Estat del Projecte}
+S'han assolit els objectius principals d'aquestes fases, aconseguint una implementació en C funcional, optimitzada i validada sobre la plataforma objectiu (Raspberry Pi 3B+). No obstant això, s'han realitzat ajustaments estratègics respecte a la proposta inicial.
+
+\subsection{Ajustaments i Justificació}
+L'ajustament més significatiu ha estat la \textbf{decisió de no integrar el codificador aritmètic (Montsec)} en l'executable final en C.
+
+\begin{itemize}
+    \item \textbf{Planificació Inicial:} Es preveia fusionar la xarxa neuronal amb el codificador per entropia per generar un \textit{bitstream} comprimit real.
+    \item \textbf{Realitat (Ajustament):} El desenvolupament s'ha centrat a perfeccionar la inferència de la xarxa neuronal.
+    \item \textbf{Justificació:} 
+    \begin{enumerate}
+        \item \textbf{Complexitat Tècnica i Priorització:} Durant la Fase 3 es va detectar un \textit{bug} crític en la quantització del paràmetre $\lambda$ que degradava severament la qualitat (9.67 dB PSNR). Es va prioritzar la correcció d'aquest error matemàtic i l'optimització de la gestió de memòria RAM (crítica en la Raspberry Pi de 1GB) per davant de la integració del codificador entròpic, que és un mòdul extern.
+        \item \textbf{Focus en la Comparativa:} L'objectiu del TFG és comparar l'eficiència de l'enfocament ``après" (Deep Learning) vs. l'estàndard (CCSDS). Atès que el cost computacional dominant de SORTENY resideix en les convolucions i no en la codificació per entropia, la comparativa de temps i memòria continua sent vàlida analitzant l'etapa d'inferència.
+    \end{enumerate}
+\end{itemize}
+
+% -------------------------------------------------------------------
+% SECCIÓ 2: METODOLOGIA
+% -------------------------------------------------------------------
+\section{Metodologia i Canvis (Fases 3 i 4)}
+
+\subsection{Fase 3: Optimització per a Sistemes Encastats}
+La metodologia per a la Fase 3 s'ha basat en l'optimització agressiva de recursos per fer viable l'execució en una Raspberry Pi 3B+ (ARM Cortex-A53, 1GB RAM).
+
+\subsubsection{Gestió de Memòria: Estratègia ``Ping-Pong''}
+L'implementació de referència en Python (TensorFlow) utilitzava fins a 800 MB de RAM, provocant fallades (\textit{OOM Kills}) o ús intensiu de \textit{swap} en la Raspberry Pi.
+Per resoldre-ho, s'ha implementat en C una estratègia de reutilització de buffers (Ping-Pong):
+\begin{itemize}
+    \item En lloc de reservar memòria per a tots els tensors intermedis de la xarxa (Conv0, GDN0, Conv1...), es reserven només dos buffers de treball (\texttt{scratch\_a} i \texttt{scratch\_b}).
+    \item Les capes s'executen seqüencialment alternant escriptura i lectura entre aquests dos buffers, reduint el consum de memòria en un factor de 9.5x.
+\end{itemize}
+
+\subsubsection{Correcció de Bugs Crítics}
+Es va identificar que la implementació inicial produïa una qualitat de reconstrucció inacceptable (PSNR $\approx$ 9 dB). Mitjançant un anàlisi exhaustiu del codi comparada amb Python, es van descobrir tres errors:
+\begin{itemize}
+    \item \textbf{Error 1 (GDN):} La fórmula de l'activació GDN era incorrecta, s'ha corregit.
+    \item \textbf{Error 2 (Padding):} Les convolucions SignalConv2D utilitzaven padding variable en lloc de fix: $\text{pad} = \lfloor \text{kernel\_size} / 2 \rfloor$.
+    \item \textbf{Error 3 (Normalització):} Faltava dividir l'entrada per 65535 abans de la primera convolució.
+    \item \textbf{Resultat:} Després de les correccions, s'ha assolit un PSNR de 76.73 dB, idèntic a Python.
+\end{itemize}
+
+\subsection{Fase 4: Avaluació Experimental}
+La metodologia d'avaluació s'ha dissenyat per ser justa i reproduïble sobre maquinari real.
+
+\begin{itemize}
+    \item \textbf{Plataforma:} Raspberry Pi 3B+ amb Raspberry Pi OS (64-bit).
+    \item \textbf{Compilació:} Ús de \textit{flags} específics per a Cortex-A53: \texttt{-O3 -mcpu=cortex-a53 -mtune=cortex-a53 -funsafe-math-optimizations}.
+    \item \textbf{Comparativa a Tres Bandes:}
+        \begin{enumerate}
+            \item \textbf{SORTENY C (Proposta):} Executable natiu optimitzat amb OpenMP.
+            \item \textbf{SORTENY Python (Referència):} Script original utilitzant TensorFlow.
+            \item \textbf{CCSDS-122 (Estàndard):} Implementació de referència MHDC en C++/Java.
+        \end{enumerate}
+    \item \textbf{Mètriques:} Temps d'execució (\textit{wall-clock}), Pic de Memòria RAM (RSS) i Qualitat de reconstrucció (PSNR).
+\end{itemize}
+
+% -------------------------------------------------------------------
+% SECCIÓ 3: RESULTATS
+% -------------------------------------------------------------------
+\section{Exposició dels Resultats}
+
+A continuació es presenten els resultats obtinguts processant una imatge Sentinel-2 (8 bandes, $512\times512$, uint16).
+
+\subsection{Validació de Qualitat i Paritat}
+Després de la correcció d'errors, la implementació en C ha assolit una paritat numèrica excel·lent amb la referència en Python.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Mètrica} & \textbf{SORTENY C} & \textbf{SORTENY Python} \\
+\midrule
+PSNR (dB) & \textbf{76.73} & 76.73 \\
+Latents Idèntics & \multicolumn{2}{c}{99.99\%} \\
+Correlació de Latents & \multicolumn{2}{c}{0.99999998} \\
+\bottomrule
+\end{tabular}
+\caption{Comparativa de qualitat de reconstrucció. Ambdues implementacions produeixen resultats pràcticament idèntics.}
+\end{table}
+
+\subsection{Rendiment Computacional (Raspberry Pi 3B+)}
+La següent taula resumeix la mitjana de 3 execucions per a cada compressor.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Compressor} & \textbf{Temps (wall)} & \textbf{Throughput} & \textbf{Speedup} & \textbf{RAM (MB)} & \textbf{Ús CPU} \\
+\midrule
+SORTENY Python & 6:55 & 5,053 px/s & 1.0x & 824 & 25\% \\
+\textbf{SORTENY C} & \textbf{5:06} & \textbf{6,853 px/s} & \textbf{1.36x} & \textbf{88} & \textbf{341\%} \\
+CCSDS-122 & 13 s & 161,319 px/s & 31.9x & 6.5 & 98\% \\
+\bottomrule
+\end{tabular}
+\caption{Resultats de rendiment en Raspberry Pi 3B+. Temps mesurat com a \textit{wall-clock time}. Throughput calculat com $(8 \times 512 \times 512) / t$.}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{Temps:} La implementació en C és \textbf{1.36 vegades més ràpida} que la versió en Python/TensorFlow. Python només utilitza el 25\% de CPU perquè TensorFlow no paral·lelitza eficientment en ARM, mentre que C aprofita els 4 nuclis (341\% CPU).
+    \item \textbf{Memòria:} Aquest és el resultat més crític. La versió en C redueix el consum de memòria en un factor de \textbf{9.4x}, baixant de 824 MB (perillosament a prop del límit d'1 GB de la placa) a uns confortables 88 MB. Això valida la viabilitat de la solució proposada per a sistemes embarcats.
+\end{itemize}
+
+% -------------------------------------------------------------------
+% SECCIÓ 4: CONCLUSIONS PROVISIONALS
+% -------------------------------------------------------------------
+\section{Conclusions Provisionals}
+
+\begin{enumerate}
+    \item \textbf{Viabilitat Tècnica:} S'ha demostrat que és possible executar xarxes neuronals complexes de compressió (SORTENY) en maquinari modest (Raspberry Pi 3) mitjançant una implementació nativa en C, eliminant la dependència de llibreries pesades com TensorFlow.
+    
+    \item \textbf{Eficiència de Memòria:} L'optimització de gestió de memòria ha estat un èxit rotund, convertint una aplicació que saturava el sistema (Python, 824 MB) en una de lleugera i viable (C, 88 MB).
+    
+    \item \textbf{Cost de la Complexitat:} Tot i l'optimització, el cost computacional de les xarxes neuronals (5 minuts) continua sent molt superior al dels estàndards clàssics com CCSDS-122 (13 segons). Això planteja un compromís clar entre la flexibilitat/potencial de la IA i la velocitat dels algorismes fixos.
+    
+    \item \textbf{Qualitat:} La implementació en C produeix resultats idèntics a Python (PSNR 76.73 dB, correlació de latents 0.99999998), validant matemàticament la correcció de la reimplementació.
+\end{enumerate}
+
+% -------------------------------------------------------------------
+% SECCIÓ 5: ALTRES
+% -------------------------------------------------------------------
+\section{Informació Addicional}
+
+\subsection{Fonts d'Informació Consultades}
+Durant aquesta etapa s'han consultat principalment:
+\begin{itemize}
+    \item Documentació tècnica del processador ARM Cortex-A53 (per a l'optimització de \textit{flags} de compilació).
+    \item Codi font de l'estàndard MHDC (CCSDS 122.0-B-1) per a la compilació i execució de la comparativa.
+    \item Documentació de TensorFlow Lite i TensorFlow Compression per a l'anàlisi de discrepàncies numèriques.
+\end{itemize}
+
+\subsection{Ús de la IA Generativa}
+D'acord amb la normativa establerta, es declara l'ús d'eines d'IA generativa com a suport en el desenvolupament:
+\begin{itemize}
+    \item \textbf{Suport al Codi:} Assistència en la refactorització del codi C per a l'optimització de bucles i la implementació de la lògica de ``ping-pong" de memòria.
+    \item \textbf{Depuració:} Ajuda en l'anàlisi de logs d'errors de compilació (especialment amb el codi C++ antic del CCSDS) i en la identificació del \textit{bug} de quantització de $\lambda$.
+    \item \textbf{Redacció:} Suport en l'estructuració i redacció preliminar d'informes tècnics en format LaTeX (exemples, estructurar taules i corregir format de mots especials).
+\end{itemize}
+
+\end{document}

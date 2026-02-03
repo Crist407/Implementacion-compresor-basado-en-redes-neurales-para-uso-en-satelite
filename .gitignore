@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual envs
+.venv/
+.env/
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.Zone.Identifier
+
+# Build artifacts (C)
+*.o
+*.d
+*.out
+build/
+sorteny_compressor
+
+# TensorBoard logs and TF events
+SORTENY_Sentinel2_model/logs/
+**/events.out.tfevents.*
+
+# Debug and outputs
+debug_dumps/
+outputs/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Large raw data (place under data/ and ignore)
+data/*
+!data/.gitkeep
+
+# Temporary files
+*.tmp
+*.log

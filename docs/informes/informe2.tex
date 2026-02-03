@@ -1,0 +1,455 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{url}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{hyperref} 
+\usepackage[catalan,spanish,english]{babel}
+
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=blue,
+    citecolor=blue,
+}
+
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{4}
+\newcommand{\subsubsubsection}[1]{\paragraph{#1}\mbox{}\\}
+
+\title{Implementació d'un compressor basat en xarxes neuronals per a ús en satèl·lit
+       \vspace{1cm} \\
+       \large \textbf{Informe de Progrés I}}
+\author{Cristhian Omar Añez López \\ 1635157}
+\date{Novembre 2025} 
+
+\begin{document}
+
+\maketitle
+\tableofcontents 
+\newpage
+
+% -------------------------------------------------------------------
+% SECCIÓN 1: OBJETIVOS (Feedback 2)
+% -------------------------------------------------------------------
+\section{Objectius}
+Aquesta secció recull els objectius definits en l'informe inicial.
+
+\subsection{Objectiu General}
+Desenvolupar i validar una versió eficient del compressor SORTENY orientada a plataformes amb recursos
+limitats, minimitzant l'impacte de les restriccions de càlcul i memòria en el rendiment i la qualitat de la
+compressió.
+
+\subsection{Objectius Específics}
+\begin{enumerate}
+    \item[a)] \textbf{Implementació i disseny.} Implementar la inferència del compressor SORTENY en llenguatge C, amb una arquitectura clara i portable, adaptada a l'ordinador de placa utilitzat com a plataforma de simulació.
+    
+    \item[b)] \textbf{Identificació i optimització de colls d'ampolla.} Localitzar de manera sistemàtica els colls d'ampolla de càlcul i memòria (transformacions, modulació/codificació, E/S) i aplicar-hi optimitzacions orientades a l'eficiència.
+    
+    \item[c)] \textbf{Comparativa de rendiment i qualitat.} Mesurar les prestacions del sistema (ràtio de compressió, PSNR, latència i consum) i comparar-les amb solucions representatives basades en els estàndards CCSDS, mantenint el mateix entorn experimental.
+    
+    \item[d)] \textbf{Proposta de millores.} Formular i validar millores de baix cost computacional que redueixin la càrrega de càlcul preservant la qualitat percebuda.
+\end{enumerate}
+
+% -------------------------------------------------------------------
+% SECCIÓN 2: PLANIFICACIÓN (Feedback 2)
+% -------------------------------------------------------------------
+\section{Planificació Prevista}
+La planificació original del TFG es divideix en cinc fases principals:
+\begin{enumerate}
+    \item \textbf{Revisió dels softwares de compressió i de les capacitats hardware:} Estudi dels estàndards CCSDS i SORTENY, i anàlisi de les restriccions de la plataforma de simulació (Raspberry Pi).
+    
+    \item \textbf{Implementació en C:} Traslladar la lògica de SORTENY a C per obtenir una primera versió funcional que compili i produeixi sortides coherents.
+    
+    \item \textbf{Preparació de l'entorn de treball:} Posada a punt de la Raspberry Pi amb les eines necessàries per executar i provar la versió en C.
+    
+    \item \textbf{Avaluació experimental:} Mesura de resultats (ràtio, qualitat, temps) i comparativa amb la referència (CCSDS 122).
+    
+    \item \textbf{Documentació:} Elaboració de l'informe final i conclusions.
+\end{enumerate}
+
+% -------------------------------------------------------------------
+% SECCIÓN 3: REALIZACIÓN (Feedback 2)
+% -------------------------------------------------------------------
+\section{Realització dels Objectius (Fases 1 i 2)}
+Aquesta secció cobreix la feina realitzada durant les dues primeres fases de la planificació.
+
+% --- FASE 1 ---
+\subsection{Fase 1: Revisió de Tecnologies i Estat de l'Art}
+% -------------------------------------------------------------------
+% Contingut per a Fase1_CAT.tex (arxiu incluïble)
+% -------------------------------------------------------------------
+
+%\section{Fase 1: Revisió de Tecnologies}
+L'objectiu d'aquesta fase és realitzar un estudi de l'estat de l'art, analitzant tant la solució proposada (SORTENY) com els estàndards actuals (CCSDS), i definir les restriccions de maquinari de la plataforma de simulació.
+
+\subsubsection{Anàlisi del Compressor SORTENY}
+SORTENY (\textit{Spectral Orthogonal Transform Encoder}) és un algorisme de compressió d'imatges amb pèrdua (\textit{lossy}), dissenyat específicament per a dades d'observació de la Terra, com ara imatges multiespectrals i hiperespectrals.
+A diferència dels compressors tradicionals (com JPEG o CCSDS) que utilitzen transformades matemàtiques fixes (ex. DCT, Wavelet), SORTENY es basa en el paradigma de compressió apresa (\textit{learned compression}).
+Utilitza una arquitectura de xarxa neuronal de tipus \textit{autoencoder}, entrenada sobre un gran conjunt de dades de satèl·lit (com Sentinel-2) per optimitzar simultàniament la transformació de la imatge i la seva codificació d'entropia.
+El procés de compressió és un \textit{pipeline} de diverses etapes dissenyat per explotar eficientment les redundàncies tant espectrals com espacials.
+
+\subsubsubsection{Etapa 1: Transformada Espectral (Descorrelació de Bandes)}
+El primer desafiament en dades hiperespectrals és l'alta redundància entre les bandes;
+una mateixa escena a 700nm és molt similar a la de 705nm.
+
+SORTENY aborda això aplicant una ``Transformada Espectral'' apresa.
+Aquesta etapa funciona de la següent manera:
+\begin{itemize}
+    \item \textbf{Procés:} Cada píxel es representa com un vector $x \in \mathbb{R}^B$, on $B$ és el nombre de bandes (ex. 5 o 7).
+Aquest vector es multiplica per una matriu de transformació $A \in \mathbb{R}^{B \times B}$ que ha estat apresa pel model.
+    \item \textbf{Objectiu:} L'operació, $x' = A \cdot x$, és funcionalment equivalent a una capa \texttt{Dense} de TensorFlow.
+El model aprèn una matriu de transformació que descorrelaciona la informació de les bandes.
+La xarxa de síntesi (el descodificador) aprendrà la matriu inversa $A^{-1}$ per a la reconstrucció.
+    \item \textbf{Sortida:} S'obté una nova imatge de $B \times H \times W$, on les noves bandes (o ``components'') són una combinació lineal de les originals, optimitzades per a la compressió.
+\end{itemize}
+
+\subsubsubsection{Etapa 2: Transformada Espacial (Anàlisi i Compressió)}
+Un cop descorrelacionades les bandes, l'arquitectura aplica la compressió espacial.
+\begin{itemize}
+    \item \textbf{Procés:} El tensor de $B \times H \times W$ es reordena i es tracta com un \textit{batch} de $B$ imatges d'un sol canal ($B \times (1 \times H \times W)$).
+Aquest \textit{batch} s'introdueix en una única Xarxa Neuronal Convolucional (CNN) anomenada \texttt{AnalysisTransform}.
+    \item \textbf{Arquitectura:} Aquesta xarxa consisteix en múltiples capes de \textbf{convolució 2D} (ex. amb kernels 5x5) i \textit{\textbf{strides}} (passos) de 2.
+    \item \textbf{Efecte:} L'ús de \textit{strides} redueix progressivament les dimensions espacials (ex. de $512 \times 512$ a $256 \times 256$, etc.), comprimint la informació espacial en un conjunt més dens de mapes de característiques.
+    \item \textbf{Activació GDN:} Entre les capes, s'utilitza una \textbf{GDN} (\textit{Generalized Divisive Normalization}).
+Aquesta funció normalitza la resposta de cada neurona $x_i$ dividint-la per l'activitat de les seves veïnes, modelant millor l'estadística de les imatges.
+La seva forma general és:
+    $$ y_i = \frac{x_i}{\sqrt{\beta_i + \gamma_i \sum_{j} x_j^2}} $$
+    On $\beta$ i $\gamma$ són paràmetres entrenables que estabilitzen la normalització.
+Això és clau per a la compressió, ja que ajusta el senyal per a una quantització més eficient.
+\end{itemize}
+
+\subsubsubsection{Etapa 3: Modulació i Quantització (Control de Qualitat)}
+El resultat de l'Etapa 2 és un tensor latent \texttt{Y}.
+Perquè la compressió sigui \textit{lossy}, aquest tensor de punt flotant ha de ser quantitzat (arrodonit a enters).
+\begin{itemize}
+    \item \textbf{Procés:} Una petita xarxa anomenada \texttt{ModulatingTransform} pren el paràmetre de qualitat desitjat (lambda, $\lambda$) i genera un factor d'escala $M$.
+    \item \textbf{Efecte:} Aquesta etapa aplica una \textbf{quantització escalar} multiplicativa. El tensor latent \texttt{Y} es multiplica per aquest factor abans de ser arrodonit:
+    $$ Y_{\hat{}} = \text{round}(Y \cdot M(\lambda)) $$
+    Un lambda $\lambda$ alt resulta en un factor $M$ major, el que porta a una quantització més fina (major qualitat, més bits), mentre que un $\lambda$ baix resulta en una quantització més agressiva (menor qualitat, menys bits).
+    \item \textbf{Sortida:} Un tensor d'enters (símbols) \texttt{Y\_hat}.
+\end{itemize}
+
+\subsubsubsection{Etapa 4: Codificació d'Entropia (Generació del Bitstream)}
+L'etapa final converteix el tensor d'enters \texttt{Y\_hat} en un fitxer binari.
+SORTENY utilitza una tècnica avançada anomenada \textit{hiper-prior} per estimar les probabilitats dels símbols.
+\begin{itemize}
+    \item \textbf{Autoencoder d'Hiper-Prior:} En paral·lel, una segona xarxa neuronal (la \texttt{HyperAnalysisTransform}) analitza el tensor latent \texttt{Y} i genera una representació comprimida de la seva pròpia estructura estadística, \texttt{Z} (l'hiper-prior).
+    \item \textbf{Model de Probabilitat:} L'objectiu és estimar la probabilitat de cada símbol $P(Y_{\hat{}})$.
+En lloc d'usar una probabilitat fixa (com en Huffman), el model assumeix que $P(Y_{\hat{}})$ segueix una distribució (ex. Gaussiana) els paràmetres de la qual ($\mu, \sigma$) són, al seu torn, generats per la xarxa a partir de l'hiper-prior \texttt{Z}.
+    \item \textbf{Codificador Aritmètic de Context:} El \textit{bitstream} es genera mitjançant un ``Codificador Aritmètic''.
+Aquest codificador és adaptatiu al context:
+    \begin{enumerate}
+        \item El tensor \texttt{Z} es quantitza ($Z_{\hat{}}$) i es codifica primer (formant el \textit{bitstream} secundari `coded\_side.bin').
+        \item El descodificador usarà $Z_{\hat{}}$ per generar els paràmetres ($\mu, \sigma$) de la distribució.
+        \item El codificador aritmètic usa aquests paràmetres (el ``context'') per codificar eficientment els símbols $Y_{\hat{}}$ en el \textit{bitstream} principal (`coded\_latent.bin').
+    \end{enumerate}
+    \item \textbf{Sortida Final:} Es generen els dos \textit{bitstreams} que, plegats, formen la imatge comprimida.
+\end{itemize}
+
+\subsubsubsection{Condicions de Funcionament i Avantatges}
+SORTENY funciona òptimament en el tipus de dades per al qual va ser entrenat (imatges multiespectrals).
+El seu avantatge teòric és que, en ser ``après'', el model complet (la transformada espectral, les convolucions espacials i el model de probabilitat) està optimitzat d'extrem a extrem (\textit{end-to-end}) per a la màxima eficiència de compressió, superant potencialment els mètodes tradicionals que separen aquests passos.
+
+%\newpage
+
+% --- Secció CCSDS ---
+
+\subsubsection{Anàlisi dels Estàndards CCSDS}
+El \textit{Consultative Committee for Space Data Systems} (CCSDS) defineix un conjunt d'estàndards per a la compressió de dades a bord de satèl·lits.
+Per a aquest treball, és crucial identificar la línia base (\textit{benchmark}) més adequada per comparar amb SORTENY.
+
+\subsubsubsection{Context: Estàndards Predictius (CCSDS 121 i 123)}
+L'estàndard CCSDS defineix algorismes predictius dissenyats per a una baixa complexitat computacional, ideals per a maquinari de vol (FPGAs) \cite{johansen_fpga_ccsds123, reconfigurable_fpga_ccsds121}.
+\begin{itemize}
+    \item \textbf{CCSDS 121.0-B-2 (Compressió Sense Pèrdua):} És un algorisme \textit{lossless} \cite{reconfigurable_fpga_ccsds121, ccsds121_b3} que utilitza un predictor 2D i un \textbf{codificador Rice} adaptatiu \cite{ulpgc_implementation_ccsds, space_wire_data_compression, reconfigurable_fpga_ccsds121}.
+Sovint s'usa com a etapa final de codificació d'entropia per a altres estàndards \cite{gaisler_ccsds121_123}.
+    
+    \item \textbf{CCSDS 123.0-B-2 (Compressió Hiperespectral):} Aquest és l'estàndard \textit{lossless} i \textit{near-lossless} dissenyat específicament per a dades hiperespectrals \cite{johansen_fpga_ccsds123, mdpi_parallel_ccsds123, mdpi_hls_ccsds123}.
+És un algorisme predictiu \textit{single pass} \cite{ulpgc_smart_compression_chime} que estima cada píxel basant-se en un veïnatge 3D (espacial i espectral) i després codifica només el residu de l'error \cite{johansen_fpga_ccsds123}, sovint usant el codificador Rice de CCSDS 121 \cite{gaisler_ccsds121_123}.
+\end{itemize}
+
+Si bé CCSDS 123 és l'estàndard per a dades hiperespectrals, el seu enfocament predictiu i la seva optimització per a compressió \textit{lossless} el converteixen en una comparativa menys directa per a SORTENY, que és un compressor \textit{lossy} basat en transformades.
+
+\subsubsubsection{Benchmark Principal: CCSDS 122.0-B-1 (Compressió amb Pèrdua)}
+Seguint les condicions establertes al treball, s'estableix l'estàndard CCSDS 122 com el \textit{benchmark} principal, ja que permet una comparació més adequada de les filosofies de disseny.
+CCSDS 122 està dissenyat per a la compressió d'imatges 2D (monobanda) i ofereix modes amb pèrdua (\textit{lossy}) i sense pèrdua (\textit{lossless}) \cite{ccsds122_b2_spec, alma_ccsds122_encoder}.
+La seva arquitectura és conceptualment similar a JPEG 2000 \cite{alma_ccsds122_encoder} i consta de dues etapes:
+\begin{enumerate}
+    \item \textbf{Etapa 1: Transformada Discreta de Wavelet (DWT)}: Utilitza filtres matemàtics fixos (ex. 9/7 biorthogonal) per descompondre la imatge en sub-bandes de freqüència, descorrelacionant eficaçment la informació espacial \cite{alma_ccsds122_encoder, ccsds122_dwt_bpe_gbt}.
+    
+    \item \textbf{Etapa 2: Quantització i Codificació (BPE)}: Els coeficients de la DWT es quantitzen (el pas on s'introdueix la pèrdua o \textit{loss}) i després es codifiquen bit a bit mitjançant un ``Codificador de Pla de Bits'' (BPE) \cite{ccsds122_dwt_bpe_gbt, ccsds122_dwt_adaptive_prediction}.
+\end{enumerate}
+
+\subsubsubsection{Comparativa de Condicions: CCSDS 122 vs. SORTENY}
+La comparativa clau d'aquest treball es centrarà en aquestes dues arquitectures, ja que ambdues resolen la compressió amb pèrdua mitjançant transformades, però amb filosofies oposades:
+
+\begin{itemize}
+    \item \textbf{CCSDS 122} utilitza una \textbf{transformada matemàtica fixa (DWT)}.
+La transformada és coneguda, ràpida i eficient, però no està optimitzada per al tipus de dades específic.
+La compressió s'aconsegueix separant la transformada de la quantització i la codificació d'entropia.
+    
+    \item \textbf{SORTENY} utilitza una \textbf{transformada ``apresa'' (Autoencoder)}. El model complet (la transformada espectral, les convolucions espacials i el model de probabilitat) està optimitzat d'extrem a extrem (\textit{end-to-end}) per a la màxima eficiència de compressió en un tipus de dades específic (imatges de satèl·lit).
+\end{itemize}
+L'objectiu serà comparar l'eficiència de la solució ``apresa" i d'alta complexitat (SORTENY) enfront de la solució ``fixa" i de baixa complexitat (CCSDS 122) en un entorn de maquinari limitat.
+
+%\newpage
+
+% --- Secció Maquinari ---
+
+\subsubsection{Anàlisi del Maquinari (Raspberry Pi)}
+L'objectiu és implementar una versió de SORTENY optimitzada per a maquinari amb recursos limitats, similar al que es trobaria en un CubeSat.
+Per simular aquest entorn, s'utilitzarà un ordinador monoplaca (SBC) tipus Raspberry Pi.
+És crucial entendre les limitacions d'aquesta plataforma per fixar expectatives realistes.
+Prenem com a referència les especificacions de la ``Raspberry Pi 4 Model B'', un model representatiu i àmpliament disponible, segons la seva documentació oficial \cite{rpi4_product_brief, rpi4_datasheet}:
+
+\begin{itemize}
+    \item \textbf{Processador (CPU):} Utilitza un SoC (System on a Chip) Broadcom BCM2711, que inclou una CPU ARM Cortex-A72 (ARM v8) de 64 bits i quatre nuclis (quad-core) a 1.5GHz \cite{rpi4_product_brief, rpi4_specs_page}.
+Aquesta arquitectura ARM és fonamentalment diferent dels processadors x86 dels ordinadors d'escriptori i portàtils.
+    \item \textbf{Memòria (RAM):} La placa està disponible en configuracions d'1GB, 2GB, 4GB o 8GB de RAM LPDDR4 \cite{rpi4_product_brief, rpi4_specs_page}.
+Aquesta quantitat de memòria és una restricció severa. Processar imatges hiperespectrals completes, que poden ocupar diversos gigabytes, és inviable.
+Per tant, qualsevol implementació ha de processar la imatge per blocs o \textit{patches}.
+    \item \textbf{Unitat Gràfica (GPU):} Integra una GPU Broadcom VideoCore VI \cite{rpi4_datasheet, rpi4_product_brief}.
+Aquesta GPU està dissenyada principalment per a multimèdia (suporta descodificació H.265 4Kp60 \cite{rpi4_product_brief}) i gràfics (OpenGL ES 3.0 \cite{rpi4_product_brief}), però no té les capacitats de còmput de propòsit general (GPGPU) que es troben a les GPUs de NVIDIA (CUDA).
+    \item \textbf{Emmagatzematge:} El sistema operatiu i les dades es carreguen des d'una targeta microSD \cite{rpi4_product_brief, rpi4_specs_page}.
+La velocitat de lectura/escriptura d'aquesta targeta és un coll d'ampolla significatiu comparada amb els discos SSD d'un PC.
+\end{itemize}
+
+\subsubsubsection{Implicacions}
+L'anàlisi del maquinari defineix les nostres restriccions de disseny i els objectius principals de la implementació:
+\begin{enumerate}
+    \item \textbf{Eliminació de Dependències Pesades:} La implementació base de SORTENY utilitza l'API de C de TensorFlow per executar la inferència del model.
+Aquesta llibreria és de grans dimensions, està dissenyada per a arquitectures x86 i GPUs NVIDIA, i no és viable per a un sistema embarcat amb recursos limitats.
+La implementació en C ha de ser nativa, pura i sense dependències externes pesades.
+    \item \textbf{Gestió de Memòria:} La limitada RAM de la plataforma (ex. 4GB o 8GB) \cite{rpi4_product_brief} prohibeix carregar imatges hiperespectrals completes, que poden ocupar diversos gigabytes.
+La solució ha d'adoptar un enfocament de \textit{streaming} o basat en blocs (\textit{patch-based}), processant la imatge en petits blocs que sí que càpiguen a la memòria disponible.
+    \item \textbf{Optimització d'E/S:} El \textit{pipeline} de compressió de la implementació base està dividit en dos programes executables separats: una primera etapa que realitza la transformació de la xarxa neuronal i escriu els seus resultats (tensors intermedis) a l'emmagatzematge;
+i una segona etapa que ha de tornar a llegir aquests fitxers del disc per realitzar la codificació d'entropia.
+Donat el coll d'ampolla que suposa l'emmagatzematge en una targeta microSD \cite{rpi4_specs_page}, aquesta estratègia d'E/S és un punt crític.
+Una implementació eficient ha de fusionar aquests passos i mantenir les dades en memòria, passant la sortida de la xarxa neuronal directament al codificador aritmètic.
+\end{enumerate}
+
+%\newpage
+
+% --- Secció Conclusions ---
+
+\subsubsection{Conclusions de la Fase 1 i Expectatives}
+L'anàlisi de les tecnologies de programari i les plataformes de maquinari defineix el punt de partida i uns objectius a executar.
+La comparativa entre SORTENY i els estàndards CCSDS revela la divisió d'aquest treball:
+
+\begin{itemize}
+    \item \textbf{Estàndard Tradicional (CCSDS 122):} Ofereix una solució \textit{lossy} de complexitat moderada, basada en una transformada matemàtica fixa (DWT) \cite{ccsds122_b2_spec, alma_ccsds122_encoder}.
+És un estàndard provat i eficient.
+    
+    \item \textbf{Enfocament ``Après'' (SORTENY):} Ofereix una solució \textit{lossy} d'alta eficiència que promet ràtios de compressió superiors.
+Això s'aconsegueix mitjançant una arquitectura d'\textit{autoencoder} optimitzada \textit{end-to-end} (transformades espectrals, convolucionals i codificació d'entropia adaptativa).
+\end{itemize}
+
+No obstant això, la implementació de referència de SORTENY proporcionada per a aquest treball no és adequada per a un entorn embarcat.
+L'anàlisi del maquinari de la Raspberry Pi 4, la nostra plataforma de simulació, ha revelat les restriccions crítiques que defineixen els objectius d'aquest projecte \cite{rpi4_product_brief, rpi4_datasheet}:
+
+\begin{enumerate}
+    \item \textbf{Dependència de Programari Pesat:} La implementació actual de SORTENY en C depèn de \texttt{libtensorflow} per a la inferència, una llibreria de grans dimensions i incompatible amb els requisits d'un sistema embarcat sense una GPU de còmput.
+    
+    \item \textbf{Limitacions de Memòria (RAM):} La RAM disponible (ex. 4GB o 8GB) \cite{rpi4_product_brief} és insuficient per a carregar imatges hiperespectrals completes.
+Per tant, el disseny de programari ha de processar les dades per blocs (\textit{patch-based}).
+    
+    \item \textbf{Coll d'Ampolla d'E/S (Entrada/Sortida):} El \textit{pipeline} de C actual escriu tensors intermedis a l'emmagatzematge (targeta microSD) \cite{rpi4_specs_page}, per a després ser llegits per un segon programa.
+Aquesta operació d'E/S en un emmagatzematge lent és un coll d'ampolla crític.
+\end{enumerate}
+
+La conclusió d'aquesta fase és que existeix una clara oportunitat de millora.
+L'objectiu serà dissenyar i implementar una nova versió de SORTENY en C que:
+
+\begin{itemize}
+    \item \textbf{Sigui autònoma:} Reemplaci la dependència de \texttt{libtensorflow} per una reimplementació nativa en C de les operacions de la xarxa (convolucions, GDN, etc.).
+    
+    \item \textbf{Sigui eficient en memòria:} Operi en mode \textit{streaming} (per blocs), passant les dades de la xarxa neuronal directament al codificador aritmètic.
+    
+    \item \textbf{Elimini el coll d'ampolla d'E/S:} Fusioni les etapes de transformació i codificació en un únic programa, evitant l'escriptura i lectura de fitxers intermedis al disc.
+\end{itemize}
+
+% (El contingut de la bibliografia es mourà al document principal InformeProgreso.tex)
+
+
+% --- FASE 2 ---
+\subsection{Fase 2: Anàlisi i Implementació Nativa en C}
+
+Un cop identificades les restriccions de maquinari i els colls d'ampolla de la implementació de referència a la Fase 1 (dependència de \texttt{libtensorflow}, ús de fitxers intermedis d'E/S), la Fase 2 s'ha centrat en l'Objectiu Específic (a): ``Implementació i disseny".
+
+L'objectiu principal d'aquesta fase ha estat crear una implementació nativa en llenguatge C pur que substitueixi el \textit{pipeline} original i aconseguir la paritat numèrica amb el model de referència de Python/TensorFlow.
+
+Per aconseguir-ho, s'ha desenvolupat un nou projecte amb una arquitectura de validació robusta, separant l'extracció de pesos (Python) de la implementació de la inferència (C).
+
+\subsubsection{Metodologia: Extracció de Pesos}
+Per trencar la dependència amb \texttt{libtensorflow}, el primer pas ha estat extreure els pesos entrenats del model.
+\begin{itemize}[leftmargin=*,itemsep=4pt]
+    \item S'ha creat un \textit{script} (\texttt{src/python/pesos.py}) que carrega el \texttt{SavedModel} original (\texttt{models/SORTENY\_Sentinel2\_model}) utilitzant TensorFlow.
+    \item Aquest \textit{script} itera per totes les capes de la xarxa neuronal (transformada espectral, convolucions, paràmetres GDN i capes denses de modulació).
+    \item Tots els pesos (kernels, bias, beta, gamma) s'exporten com a fitxers binaris plans (\texttt{float32}) a la carpeta \texttt{weights/pesos\_bin/}.
+    \item Finalment, es genera un índex (\texttt{weights\_index.tsv}) que mapeja cada nom de pes al seu fitxer \texttt{.bin}, \textit{dtype} i dimensions, per tal que el codi C pugui carregar-los.
+\end{itemize}
+
+\subsubsection{Implementació de la Inferència Nativa en C}
+El nucli d'aquesta fase ha estat la reimplementació de totes les operacions de la xarxa neuronal en C pur, sense dependències externes (excepte \texttt{libm}).
+\begin{itemize}[leftmargin=*,itemsep=6pt]
+    \item \textbf{Càrrega de Pesos (\texttt{sorteny\_model.c}):} S'ha implementat un carregador que llegeix l'índex \texttt{.tsv}, reserva la memòria necessària (\texttt{malloc}) per a l'estructura \texttt{SORTENY\_Model}, i carrega tots els pesos binaris a la RAM.
+    
+    \item \textbf{Implementació de Capes (\texttt{sorteny\_layers.c}):} S'han recreat les funcions matemàtiques de les capes de TensorFlow:
+    \begin{itemize}[leftmargin=*,itemsep=4pt]
+        \item \textbf{apply\_dense:} Multiplicació matriu-vector per a la transformada espectral i la moduladora.
+        \item \textbf{apply\_conv2d:} Convolució 2D que replica la semàntica de correlació i el \textit{padding} asimètric SAME de TensorFlow.
+        \item \textbf{apply\_gdn:} Implementació de la fórmula exacta de la \textit{Generalized Divisive Normalization} (GDN), incloent la gestió d'\textit{epsilon} i l'orientació dels pesos \textit{gamma}.
+        \item \textbf{apply\_relu:} Activació estàndard \(\max(0, x)\).
+    \end{itemize}
+    
+    \item \textbf{Pipeline Principal (\texttt{main.c}):} S'ha creat un nou programa orquestrador que substitueix el \texttt{transform.c} original. Aquest programa:
+    \begin{enumerate}[leftmargin=*,itemsep=6pt]
+        \item Carrega el model (\texttt{load\_model\_weights}) i la imatge (\texttt{load\_image\_bsq\_u16\_to\_planar\_f32\_ex}).
+        \item Reserva memòria per a tots els tensors intermedis.
+        \item Executa el \textit{pipeline} de 5 etapes en C: Transformada Espectral $\rightarrow$ Normalització $\rightarrow$ Analysis Transform (bucle de 8 bandes) $\rightarrow$ Modulating Transform $\rightarrow$ Quantització (amb redondeig).
+        \item Desa la sortida final (\texttt{Y\_hat\_c.bin}).
+    \end{enumerate}
+\end{itemize}
+
+\subsubsubsection{Metodologia de Validació per Etapes}
+Per garantir la paritat numèrica, s'ha implementat un \textit{pipeline} de validació:
+\begin{itemize}[leftmargin=*,itemsep=6pt]
+    \item \textbf{Generació de la ``Veritat Absoluta" (\texttt{validar\_python.py}):} Aquest \textit{script} de Python carrega el model de TF, però en lloc d'executar-lo d'un sol cop, replica exactament el \textit{pipeline} del C (capa per capa, incloent la normalització manual i la reordenació de tensors). La seva sortida (\texttt{python\_ground\_truth.bin}) és el resultat teòricament perfecte.
+    
+    \item \textbf{Sistema de Depuració (\texttt{DUMP}):} Tant el \texttt{main.c} com el \texttt{validar\_python.py} responen a variables d'entorn (ex. \texttt{DUMP\_STAGES=1}). Això permet desar els tensors intermedis de cada etapa (ex. \texttt{gdn0\_c.bin} vs. \texttt{gdn0\_py.bin}).
+    
+    \item \textbf{Comparació Numèrica (\texttt{compare\_products.py}):} Aquest \textit{script} compara els binaris de C i Python, etapa per etapa, i informa de les diferències numèriques.
+\end{itemize}
+
+\subsubsubsection{Resultats de la Fase 2}
+L'execució del \textit{pipeline} de validació ha estat un èxit i ha permès identificar i corregir errors fins a assolir la paritat numèrica (considerant les diferències de coma flotant):
+\begin{itemize}[leftmargin=*,itemsep=6pt]
+    \item Les diferències en els tensors de coma flotant previs al redondeig són mínimes (ex. \texttt{Y\_float\_c vs Y\_float\_py} \(\max\approx 3.8\times 10^{-3}\)).
+    \item S'ha implementat un redondeig bancari (\textit{half-to-even}) en C (\texttt{USE\_HALF\_EVEN=1}) per replicar el comportament de \texttt{tf.round}.
+    \item Amb aquest redondeig, la sortida final (\texttt{Y\_hat}) és gairebé idèntica, amb diferències màximes de \(\pm 1\) només en casos frontera de redondeig.
+\end{itemize}
+
+Aquesta fase conclou amb una implementació nativa en C validada i funcional, que elimina la dependència de \texttt{libtensorflow} i resol els principals colls d'ampolla de disseny.
+
+
+
+
+
+% -------------------------------------------------------------------
+% SECCIÓ 4: CONCLUSIONS I PRÒXIMS PASSOS
+% -------------------------------------------------------------------
+\section{Conclusions i Pròxims Passos}
+
+\subsection{Conclusions del Període}
+Aquest primer informe de progrés ha cobert la realització de les Fases 1 i 2 de la planificació, centrades en l'anàlisi de viabilitat i la implementació d'un prototip funcional.
+
+\begin{itemize}[leftmargin=*,itemsep=6pt]
+    \item \textbf{Fase 1 (Revisió):} L'anàlisi de l'estat de l'art ha confirmat la idoneïtat de la comparativa entre l'enfocament d'alta complexitat ``après" de SORTENY i l'enfocament de baixa complexitat ``fix" de l'estàndard CCSDS 122 (basat en DWT). L'anàlisi del maquinari (Raspberry Pi) va identificar tres colls d'ampolla crítics a la implementació de referència: la dependència de \texttt{libtensorflow}, les limitacions de gestió de memòria (RAM) i, el més important, el coll d'ampolla d'E/S (I/O) causat per l'escriptura de fitxers intermedis a la targeta microSD.
+    \item \textbf{Fase 2 (Implementació):} S'ha completat amb èxit l'objectiu de dissenyar una nova implementació nativa en C (\texttt{sorteny\_compressor}). Aquesta implementació replica matemàticament tot el \textit{pipeline} de la xarxa neuronal (Transformada Espectral, Convolucions, GDN i Modulació) sense cap dependència externa. S'ha creat un entorn de validació robust que demostra la paritat numèrica (amb la precisió de coma flotant) entre la sortida del codi C i la referència de Python.
+\end{itemize}
+
+Com a conclusió, s'ha resolt el coll d'ampolla de la dependència de programari (\texttt{libtensorflow}) i s'ha validat una base de codi C nativa i eficient.
+
+\subsection{Pròxims Passos (Fases 3 i 4)}
+El treball realitzat a la Fase 2 ha generat el tensor latent final (\texttt{Y\_hat}), però encara no el comprimeix en un \textit{bitstream}. El \textit{pipeline} actual encara depèn d'escriure aquesta sortida al disc, la qual cosa no resol el coll d'ampolla d'E/S.
+
+Els pròxims passos es centraran a resoldre aquest problema i a realitzar l'avaluació experimental:
+
+\begin{enumerate}[leftmargin=*,itemsep=6pt]
+    \item \textbf{Fase 3: Integració i Optimització del Compressor}
+    \begin{itemize}[leftmargin=*,itemsep=4pt]
+        \item \textbf{Fusió de Components:} El pròxim objectiu és \textbf{fusionar} la implementació nativa de la xarxa neuronal (\texttt{main.c} / \texttt{sorteny\_layers.c}) amb el codificador aritmètic (\texttt{encoder.c} del projecte original). L'objectiu és crear un únic executable que realitzi la transformació i la codificació d'entropia en memòria, passant les dades directament del tensor \texttt{Y\_hat} al codificador aritmètic sense escriure mai fitxers intermedis al disc.
+        \item \textbf{Optimització de Memòria:} Paral·lelament a la fusió, s'adaptarà el codi perquè operi en mode \textit{patch-based} (processament per blocs), en lloc de carregar la imatge sencera a la RAM, resolent així la limitació final de memòria.
+    \end{itemize}
+    
+    \item \textbf{Fase 4: Avaluació Experimental i Comparativa}
+    \begin{itemize}[leftmargin=*,itemsep=4pt]
+        \item \textbf{Desplegament:} Un cop es disposi de l'executable fusionat i optimitzat, es desplegarà a la plataforma de simulació (Raspberry Pi).
+        \item \textbf{Mesures de Rendiment:} S'executaran les proves per mesurar les mètriques clau: latència (temps de compressió), ús de memòria (RAM), ràtio de compressió i qualitat (PSNR).
+        \item \textbf{Comparativa amb CCSDS 122:} Finalment, aquests resultats es compararan directament amb el \textit{benchmark} establert (CCSDS 122) per validar la hipòtesi del TFG.
+    \end{itemize}
+\end{enumerate}
+
+
+% -------------------------------------------------------------------
+% BIBLIOGRAFÍA
+% -------------------------------------------------------------------
+\newpage
+\begin{thebibliography}{9}
+
+
+\bibitem{ulpgc_implementation_ccsds}
+Santos, L., Gomez, A., \& Sarmiento, R. ``Implementation of CCSDS Standards for Lossless Multispectral and Hyperspectral Satellite Image Compression," \textit{IEEE Transactions on Aerospace and Electronic Systems}, vol. 56, no. 3, pp. 2120-2133, 2020.
+
+\bibitem{johansen_fpga_ccsds123}
+Johansen, T. A., Hjelmstad, E. L. M. S. E. L., \& Lande, T. S. ``An Efficient Real-Time FPGA Implementation of the CCSDS-123 Compression Standard for Hyperspectral Images," En \textit{2018 26th European Signal Processing Conference (EUSIPCO)}, Rome, Italy, 2018, pp. 1197-1201.
+
+\bibitem{mdpi_parallel_ccsds123}
+Báscones, D., González, C., \& Mozos, D. ``Parallel Implementation of the CCSDS 1.2.3 Standard for Hyperspectral Lossless Compression," \textit{Remote Sensing}, vol. 9, no. 10, p. 973, 2017.
+
+\bibitem{mdpi_hls_ccsds123}
+Rodriguez-Moreno, M. A., Galiano-Ortega, D., Chaves-Cortes, R. C., \& Toledo, F. J. ``Hardware Implementation of the CCSDS 1.2.3-B-2 Near-Lossless Compression Standard Following an HLS Design Methodology," \textit{Electronics}, vol.
+10, no. 16, p. 1959, 2021.
+
+\bibitem{researchgate_flowchart_ccsds123}
+Chaves-Cortes, R. C., Galiano-Ortega, D., Rodriguez-Moreno, M. A., \& Toledo, F. J. ``Scalable Hardware-Based On-Board Processing for Run-Time Adaptive Lossless Hyperspectral Compression," \textit{IEEE Transactions on Geoscience and Remote Sensing}, vol.
+57, no. 10, pp. 7855-7867, 2019.
+
+\bibitem{ulpgc_smart_compression_chime}
+Gómez-de-Gabriel, J. M., Guerra-T., M., Gómez-A., A., López, R., \& López, S. ``A Smart Compression Approach Based on the CCSDS 123.0-B-2 Standard for CHIME," \textit{IEEE Geoscience and Remote Sensing Letters}, vol.
+19, pp. 1-5, 2022.
+
+\bibitem{spie_snapshot_compression}
+Zeng, X., Huang, H., Lv, D., Zeng, M., \& Ping, Y. ``Optimization of Compression Algorithm for Snapshot Mosaic Hyperspectral Images Based on CCSDS 123 Standard," En \textit{Proc. SPIE 12747, International Conference on Optical and Photonic Engineering (icOPEN 2023)}, 2023, Art. no. 127471G.
+
+\bibitem{alma_ccsds122_encoder}
+Alma Technologies, ``CCSDS 122.0-B-1 Encoder IP Core - Product Brief," [Online]. Available: \url{https://www.alma-technologies.com/ip-core.CCSDS-122-E}.
+
+\bibitem{ccsds122_dwt_adaptive_prediction}
+Agudo-G., J. I., Serra-Cano, J. F., \& G.-Diaz, E. ``Discrete wavelet transform fully adaptive prediction error coder: Image data compression based on CCSDS 122.0 and fully adaptive prediction error coder," \textit{IEEE Latin America Transactions}, vol.
+13, no. 10, pp. 3254-3260, 2015.
+
+\bibitem{ccsds122_dwt_bpe_gbt}
+Zicter, P., Schiavon, G. G. G., Fanucci, L., \& Fossi, L. ``A 13.3 Gbps 9/7M Discrete Wavelet Transform for CCSDS 122.0-B-1 Image Data Compression on a Space-Grade SRAM FPGA," \textit{Electronics}, vol.
+9, no. 8, p. 1234, 2020.
+
+\bibitem{ccsds122_b2_spec}
+Consultative Committee for Space Data Systems (CCSDS). ``Image Data Compression." \textit{CCSDS 122.0-B-2. Blue Book.
+Issue 2}. Washington, D.C.: CCSDS, 2017.
+
+\bibitem{gaisler_ccsds121_123}
+Cobham Gaisler, ``CCSDS 121/123 Lossless Compression - Product Brief," [Online]. Available: \url{https://www.gaisler.com/products/ccsds-121-123-lossless-compression}.
+\bibitem{reconfigurable_fpga_ccsds121}
+Tsigkanos, A., G., D. G., Paliouras, V., \& Goutis, C. ``A Reconfigurable FPGA Implementation of CCSDS 121.0-B-2 Lossless Data Compression," \textit{IEEE Transactions on Aerospace and Electronic Systems}, vol.
+55, no. 4, pp. 1949-1961, 2019.
+
+\bibitem{space_wire_data_compression}
+Cabral, L., Matos, P., Evans, G., \& Santos, J. "EFFICIENT DATA COMPRESSION FOR SPACECRAFT INCLUDING PLANETARY PROBES," En \textit{Proc.
+7th International Planetary Probe Workshop}, Barcelona, Spain, 2010.
+
+\bibitem{ccsds121_b3}
+Consultative Committee for Space Data Systems (CCSDS). ``Lossless Data Compression." \textit{CCSDS 121.0-B-3.
+Blue Book. Issue 3}. Washington, D.C.: CCSDS, 2020.
+
+
+\bibitem{rpi4_product_brief}
+Raspberry Pi Ltd., ``Raspberry Pi 4 Model B Product Brief," 2025. [Online]. Available: \url{https://datasheets.raspberrypi.com/rpi4/raspberry-pi-4-product-brief.pdf}
+
+\bibitem{rpi4_datasheet}
+Raspberry Pi Ltd., ``Raspberry Pi 4 Model B Datasheet," 2024. [Online]. Available: \url{https://datasheets.raspberrypi.com/rpi4/raspberry-pi-4-datasheet.pdf}
+
+\bibitem{rpi4_specs_page}
+Raspberry Pi Ltd., ``Raspberry Pi 4 Model B - Specifications," [Online]. Available: \url{https://www.raspberrypi.com/products/raspberry-pi-4-model-b/specifications/}.
+
+\bibitem{rpi4_rs_online}
+RS Components, ``Raspberry Pi 4 Computer Model B - Technical Datasheet," [Online]. Available: \url{https://docs.rs-online.com/b1fb/0900766b816fa153.pdf}.
+
+\end{thebibliography}
+
+\end{document}

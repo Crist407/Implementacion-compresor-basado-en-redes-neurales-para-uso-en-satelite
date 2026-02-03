@@ -1,0 +1,141 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage{graphicx} 
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[catalan]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{csquotes}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{mathptmx} 
+\usepackage{microtype} 
+
+
+
+\geometry{margin=2.5cm}
+
+% Configuración de hyperref
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\title{Implementació d'un compressor basat en xarxes neuronals\\per a ús en satèl·lit}
+\author{Cristhian Omar Añez López \\ 1635157}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Introducció}
+L'avenç tecnològic recent en camps com la intel·ligència artificial, l'aprenentatge automàtic, les comunicacions 5G i la robòtica ha revolucionat múltiples sectors \cite{zhu2017,bariah2020-ntn}. Un àmbit particularment afectat és l'observació de la Terra mitjançant satèl·lits, on l'adquisició d'imatges multiespectrals i hiperespectrals genera volums de dades sense precedents \cite{bioucas2013,enmap2015}.
+
+El principal repte rau en la necessitat de comprimir eficientment aquestes imatges d'alta resolució espectral per superar les limitacions de capacitat d'emmagatzematge i transmissió inherents als satèl·lits, especialment en les missions de baix cost i CubeSats \cite{cubesat101,cds-cubesat,selva2012}. Els estàndards internacionals actuals, com els protocols CCSDS 121, 122 i 123 \cite{ccsds123}, empren algoritmes tradicionals de compressió que, malgrat la seva eficàcia, presenten limitacions computacionals creixents davant l'augment de la resolució espectral i espacial de les imatges modernes.
+
+En aquest context, les tècniques de compressió basades en xarxes neuronals emergeixen com una alternativa prometedora. SORTENY (\emph{Spectral Orthogonal Transform Encoder}) \cite{sorteny2024} representa un avenç significatiu en aquest camp, implementant un sistema de compressió amb pèrdua que explota les correlacions espectrals i espacials mitjançant transformades apreses. Aquest enfoque ha demostrat capacitats superiors de compressió mantenint la qualitat de la informació espectral.
+
+No obstant això, la implementació de SORTENY en entorns espacials reals presenta desafiaments considerables degut a les restriccions de potència, pes i capacitat computacional dels satèl·lits. Aquestes limitacions poden simular-se i estudiar-se utilitzant plataformes de desenvolupament de recursos limitats, com els ordinadors de placa única tipus Raspberry Pi, que ofereixen un entorn ideal per a l'optimització d'algoritmes destinats a aplicacions espacials.
+
+\section*{Objectius}
+	\subsection*{Objectiu general} Desenvolupar i validar una versió eficient del compressor SORTENY orientada a plataformes amb recursos limitats, minimitzant l'impacte de les restriccions de càlcul i memòria en el rendiment i la qualitat de la compressió.
+
+	\subsection*{Objectius específics}
+\begin{enumerate}[leftmargin=*,label=\alph*)]
+  \item \textit{Implementació i disseny.} Implementar la inferència del compressor SORTENY en llenguatge C, amb una arquitectura clara i portable, adaptada a l'ordinador de placa utilitzat com a plataforma de simulació.
+  \item \textit{Identificació i optimització de colls d'ampolla.} Localitzar de manera sistemàtica els colls d'ampolla de càlcul i memòria (transformacions, modulació/codificació, E/S) i aplicar-hi optimitzacions orientades a l'eficiència.
+  \item \textit{Comparativa de rendiment i qualitat.} Mesurar les prestacions del sistema (ràtio de compressió, PSNR, latència i consum) i comparar-les amb solucions representatives basades en els estàndards CCSDS, mantenint el mateix entorn experimental.
+  \item \textit{Proposta de millores.} Formular i validar millores de baix cost computacional que redueixin la càrrega de càlcul preservant la qualitat percebuda.
+\end{enumerate}
+
+\section*{Fases i metodologia}
+El treball es divideix en cinc fases senzilles. L'objectiu és avançar pas a pas, comprovant cada fita abans de continuar.
+
+\begin{enumerate}
+\item \textbf{Revisió dels softwares de compressió i de les capacitats hardware}
+\begin{itemize}
+  \item Lectura i resum dels estàndards CCSDS i de SORTENY per entendre què resolen i en quines condicions funcionen millor.
+  \item Visió general de què pot oferir el maquinari típic (CubeSats, ordinadors monoplaca) per fixar expectatives realistes.
+\end{itemize}
+
+\item \textbf{Implementació en C}
+\begin{itemize}
+  \item Traslladar el compressor SORTENY a C de forma incremental, prioritzant que compili i s'executi en local sense errors.
+  \item Objectiu d'aquesta fase: obtenir una primera versió funcional que produeixi sortides coherents amb la línia base.
+\end{itemize}
+
+\item \textbf{Preparació de l'entorn de treball}
+\begin{itemize}
+  \item Posada a punt d'una \emph{Raspberry Pi} o entorn equivalent amb les eines necessàries.
+  \item Objectiu d'aquesta fase: poder executar la versió en C a la placa i comprovar que tot arrenca correctament (\emph{prova de fum}).
+\end{itemize}
+
+\item \textbf{Avaluació experimental}
+\begin{itemize}
+  \item Preparar un petit conjunt d'imatges de prova i mesurar resultats (ràtio de compressió, qualitat i temps) de manera ordenada.
+  \item Comparar amb una referència basada en CCSDS en les mateixes condicions i explicar què es guanya i què es perd amb cada canvi.
+\end{itemize}
+
+\item \textbf{Documentar per a propers treballs}
+\begin{itemize}
+  \item Elaborar un informe clar amb conclusions i deixar passos senzills per repetir les proves (com compilar, com executar i amb quines dades).
+  \item Recollir idees de millora que han quedat fora i propostes concretes perquè una altra persona pugui continuar fàcilment quan calgui.
+\end{itemize}
+\end{enumerate}
+
+
+
+
+
+\begin{thebibliography}{99}
+
+\bibitem{zhu2017}
+X.~X.~Zhu, D.~Tuia, L.~Mou, G.-S.~Xia, L.~Zhang, F.~Xu i J.~A.~Benediktsson,
+``Deep Learning in Remote Sensing: A Comprehensive Review and List of Resources'',
+\emph{IEEE Geoscience and Remote Sensing Magazine}, vol.~5, no.~4, pp.~8--36, 2017. doi:10.1109/MGRS.2017.2762307
+
+\bibitem{bariah2020-ntn}
+L.~Bariah, L.~A.~DaSilva, E.~Caldas, W.~Saad, M.~Debbah, H.~V.~Poor i C.~S.~Hong,
+``A Prospective Look at Integrated Satellite-Terrestrial Networks for 6G and Beyond'',
+\emph{IEEE Network}, vol.~35, no.~3, pp.~118--125, 2021. doi:10.1109/MNET.011.2000539
+
+\bibitem{bioucas2013}
+J.~M.~Bioucas-Dias, A.~Plaza, G.~Camps-Valls, P.~Scheunders, N.~M.~Nasrabadi i J.~Chanussot,
+``Hyperspectral Remote Sensing Data Analysis and Future Challenges'',
+\emph{IEEE Geoscience and Remote Sensing Magazine}, vol.~1, no.~2, pp.~6--36, 2013. doi:10.1109/MGRS.2013.2244672
+
+\bibitem{enmap2015}
+K.~Guanter, H.~Kaufmann, C.~Dobber, et al.,
+``The EnMAP Spaceborne Imaging Spectroscopy Mission for Earth Observation'',
+\emph{Remote Sensing}, vol.~7, no.~7, pp.~8830--8857, 2015. doi:10.3390/rs70708830
+
+\bibitem{sorteny2024}
+S.~Mijares, J.~Bartrina-Rapesta, M.~Hernández-Cabronero i J.~Serra-Sagristà,
+``Learned Spectral and Spatial Transforms for Multispectral Remote Sensing Data Compression'',
+\emph{IEEE Geoscience and Remote Sensing Letters}, vol. 22, no. 5001005, pp. 1-5, 2025.
+10.1109/LGRS.2025.3554269.
+
+\bibitem{ccsds123}
+Consultative Committee for Space Data Systems (CCSDS),
+\emph{Lossless Multispectral and Hyperspectral Image Compression (CCSDS 123.0-B-2)},
+Washington, DC, USA, 2019.
+
+\bibitem{cubesat101}
+NASA, ``CubeSat 101: Basic Concepts and Processes for First-Time CubeSat Developers'', NASA, 2017. 
+\url{https://www.nasa.gov/wp-content/uploads/2017/03/nasa_csli_cubesat_101_508.pdf}
+
+\bibitem{cds-cubesat}
+Cal Poly SLO, ``CubeSat Design Specification'', Rev.~14.1, 2014. 
+\url{https://static1.squarespace.com/static/5418c831e4b0fa4ecac1bacd/t/62193b7fc9e72e0053f00910/1645820809779/CDS+REV14_1+2022-02-09.pdf}
+
+\bibitem{selva2012}
+A.~Selva i D.~Krejci, ``A survey and assessment of the capabilities of CubeSats for Earth observation'', 
+\emph{Acta Astronautica}, vol.~74, pp.~50--68, 2012. doi:10.1016/j.actaastro.2011.12.014
+
+\end{thebibliography}
+
+\end{document}

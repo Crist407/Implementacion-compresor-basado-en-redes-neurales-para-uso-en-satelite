@@ -1,0 +1,824 @@
+% ============================================================================
+% PRESENTACIÓ TFG
+% Cristhian Omar Añez López - UAB 2025/26
+% ============================================================================
+\documentclass[aspectratio=169,10pt]{beamer}
+
+% ============================================================================
+% TEMA - Metropolis 
+% ============================================================================
+\usetheme{metropolis}
+\usepackage[utf8]{inputenc}
+\usepackage[catalan]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{tikz}
+\usepackage{fontawesome5}
+\usepackage{xcolor}
+\usepackage{multicol}
+\usepackage{appendixnumberbeamer}
+
+% ============================================================================
+% PALETA DE COLORS - Tema Espacial/Tecnològic
+% ============================================================================
+\definecolor{cosmicBlue}{RGB}{15, 32, 65}        % Blau fosc espacial
+\definecolor{nebulaBlue}{RGB}{30, 90, 150}       % Blau nebulosa
+\definecolor{starLight}{RGB}{255, 215, 100}      % Llum estel·lar
+\definecolor{techCyan}{RGB}{0, 200, 220}         % Cian tecnològic
+\definecolor{alertRed}{RGB}{220, 80, 80}         % Vermell alerta
+\definecolor{successGreen}{RGB}{80, 180, 100}    % Verd èxit
+
+% Configuració del tema amb colors personalitzats
+\setbeamercolor{frametitle}{bg=cosmicBlue, fg=white}
+\setbeamercolor{title}{fg=cosmicBlue}
+\setbeamercolor{progress bar}{fg=techCyan, bg=cosmicBlue!30}
+\setbeamercolor{block title}{bg=nebulaBlue, fg=white}
+\setbeamercolor{block body}{bg=cosmicBlue!10}
+\setbeamercolor{alerted text}{fg=alertRed}
+\setbeamercolor{example text}{fg=successGreen}
+
+% ============================================================================
+% METADADES
+% ============================================================================
+\title{\textbf{Implementació Compressor Basat en Xarxes Neurals per a Ús en Satèl·lit}}
+\subtitle{Portant Deep Learning a l'Espai amb Recursos Limitats}
+\author{Cristhian Omar Añez López}
+\institute{
+    Escola d'Enginyeria (EE) \\
+    Universitat Autònoma de Barcelona (UAB) \\[0.3em]
+    \footnotesize{Tutor: Sebastià Mijares Verdú}
+}
+\date{Febrer 2026}
+
+% ============================================================================
+% DOCUMENT
+% ============================================================================
+\begin{document}
+
+% ----------------------------------------------------------------------------
+% PORTADA
+% ----------------------------------------------------------------------------
+{
+\setbeamertemplate{footline}{}
+\begin{frame}[plain]
+    \maketitle
+    \begin{center}
+        \vspace{-1em}
+        \footnotesize{\textit{TFG en Enginyeria Informàtica — Menció: Tecnologies de la Informació}}
+    \end{center}
+\end{frame}
+}
+
+% ----------------------------------------------------------------------------
+% ÍNDEX
+% ----------------------------------------------------------------------------
+\begin{frame}{Contingut de la Presentació}
+    \tableofcontents
+\end{frame}
+
+% ============================================================================
+% SECCIÓ 1: INTRODUCCIÓ I MOTIVACIÓ
+% ============================================================================
+\section{Introducció i Motivació}
+
+\begin{frame}{El Problema: Massa Dades, Poc Ample de Banda}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \textbf{Context actual de l'observació terrestre:}
+            \begin{itemize}
+                \item Missions com \textbf{Sentinel-2}, EnMAP, PRISMA generen terabytes diaris
+                \item Imatges multiespectrals/hiperespectrals d'alta resolució
+                \item \alert{L'ample de banda de descàrrega és limitat}
+            \end{itemize}
+            
+            \vspace{1em}
+            \textbf{En CubeSats i nanosatèl·lits:}
+            \begin{itemize}
+                \item Potència molt limitada (watts)
+                \item Poca memòria RAM ($\leq$ 1 GB)
+                \item CPU de baix consum (ARM)
+            \end{itemize}
+            
+            \vspace{1em}
+            {\large \faArrowRight} \textbf{Cal comprimir les dades a bord!}
+        \end{column}
+        \begin{column}{0.4\textwidth}
+            \begin{block}{El Desafiament}
+                \centering
+                \vspace{0.5em}
+                \textit{Com executar algorismes intel·ligents de compressió en maquinari molt limitat?}
+                \vspace{0.5em}
+            \end{block}
+            \vspace{1em}
+            \includegraphics[width=\textwidth]{img/SORTENY_DIAGRAM.png}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Objectius del TFG}
+    \begin{block}{Objectiu General}
+        Desenvolupar i validar una versió eficient del compressor \textbf{SORTENY} orientada a plataformes amb recursos limitats.
+    \end{block}
+    
+    \vspace{1em}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{\faCode\ Implementació}
+            \begin{itemize}
+                \item Reimplementar SORTENY en \textbf{C pur}
+                \item Eliminar dependències de TensorFlow
+                \item Arquitectura portable per ARM
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{\faCogs\ Optimització}
+            \begin{itemize}
+                \item Reduir consum de memòria
+                \item Explotar paral·lelisme (OpenMP)
+                \item Vectorització SIMD (NEON)
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{\faChartLine\ Avaluació}
+            \begin{itemize}
+                \item Comparar amb Python/TensorFlow
+                \item Benchmark vs CCSDS-122
+                \item Validar qualitat de reconstrucció
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{\faRocket\ Viabilitat}
+            \begin{itemize}
+                \item Provar en Raspberry Pi 3B+
+                \item Simular restriccions de CubeSat
+                \item Demostrar factibilitat real
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ============================================================================
+% SECCIÓ 2: ESTAT DE L'ART
+% ============================================================================
+\section{Estat de l'Art}
+
+\begin{frame}{Compressió Espacial: Mètodes Clàssics (CCSDS)}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \textbf{CCSDS 122.0-B-1: L'Estàndard Industrial}
+            \begin{enumerate}
+                \item \textbf{Transformada Wavelet (DWT)}
+                    \begin{itemize}
+                        \item Descomposició en sub-bandes
+                        \item Filtres 5/3 (lossless) o 9/7 (lossy)
+                        \item Compactació d'energia
+                    \end{itemize}
+                \item \textbf{Codificador de Plans de Bits (BPE)}
+                    \begin{itemize}
+                        \item Codificació progressiva MSB→LSB
+                        \item Estructura d'arbres (Zerotrees)
+                        \item Flux escalable
+                    \end{itemize}
+            \end{enumerate}
+            
+            \vspace{0.5em}
+            \textcolor{successGreen}{\faCheck} Ràpid, eficient, provat en vol \\
+            \textcolor{alertRed}{\faTimes} Transformades \textbf{fixes}, no adaptatives
+        \end{column}
+        \begin{column}{0.42\textwidth}
+            \includegraphics[width=\textwidth]{img/ccsds_schematic.png}
+            \vspace{0.5em}
+            \includegraphics[width=\textwidth]{img/ccsds_dwt_3lvl.png}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Compressió Apresa: El Model SORTENY}
+    \begin{columns}[T]
+        \begin{column}{0.45\textwidth}
+            \textbf{SORTENY: Spectral Orthogonal Transform Encoder}
+            
+            \vspace{0.5em}
+            Desenvolupat per l'IEEC, combina:
+            \begin{enumerate}
+                \item \textbf{Transformada Espectral Apresa}
+                    \begin{itemize}
+                        \item Similar a PCA/KLT
+                        \item Descorrelació de bandes
+                    \end{itemize}
+                \item \textbf{CNN per Compressió Espacial}
+                    \begin{itemize}
+                        \item Convolucions amb stride
+                        \item Normalització GDN
+                    \end{itemize}
+                \item \textbf{Modulació de Qualitat ($\lambda$)}
+                    \begin{itemize}
+                        \item Taxa variable sense reentrenar
+                        \item Un únic model per tot
+                    \end{itemize}
+            \end{enumerate}
+        \end{column}
+        \begin{column}{0.52\textwidth}
+            \begin{center}
+                \includegraphics[width=17em]{img/SORTENY_DIAGRAM.png}
+            \end{center}
+            %%\vspace{0.3em}
+            \begin{block}{Avantatge Clau}
+                \textbf{Adaptabilitat}: Les transformades s'aprenen de les dades reals, optimitzant qualitat per bit.
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{El Problema de SORTENY}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{alertblock}{Requisits de la Versió Python/TensorFlow}
+                \begin{itemize}
+                    \item \textbf{RAM:} 800 MB només per carregar el model
+                    \item \textbf{Dependències:} TensorFlow, NumPy, Python runtime
+                    \item \textbf{Pes:} Gigabytes d'instal·lació
+                \end{itemize}
+            \end{alertblock}
+            
+            \vspace{0.5em}
+            \textbf{En una Raspberry Pi 3B+:}
+            \begin{itemize}
+                \item 1 GB RAM total (compartida amb GPU)
+                \item El sistema col·lapsa (OOM Kill)
+                \item Swap massiu → rendiment catastròfic
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{exampleblock}{La Pregunta Clau}
+                \centering
+                \vspace{0.5em}
+                \Large{\textit{És viable executar un compressor basat en xarxes neuronals en un entorn embarcat realista?}}
+                \vspace{0.5em}
+            \end{exampleblock}
+            
+            \vspace{1em}
+            \begin{center}
+                {\Huge \faArrowDown}
+                
+                \vspace{0.5em}
+                \textbf{Sí, però com?}
+            \end{center}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ============================================================================
+% SECCIÓ 3: METODOLOGIA
+% ============================================================================
+\section{Metodologia i Implementació}
+
+\begin{frame}{Estratègia: Reimplementació Nativa en C}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Fase 1: Extracció de Pesos}
+            \begin{itemize}
+                \item Serialitzar tensors a binaris plans
+                \item Generar índex de metadades
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{Fase 2: Motor d'Inferència}
+            \begin{itemize}
+                \item \textbf{Convolució 2D:} Padding SAME manual
+                \item \textbf{GDN:} Normalització divisiva
+                \item \textbf{Transformada Espectral:} Producte matricial
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{Resultat:}
+            \begin{itemize}
+                \item \textcolor{successGreen}{\faCheck} Zero dependències
+                \item \textcolor{successGreen}{\faCheck} Executable únic i portable
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{block}{Desacoblament del Framework}
+                \begin{center}
+                    \begin{tikzpicture}[scale=0.8]
+                        % Python box
+                        \node[draw, fill=alertRed!20, minimum width=3cm, minimum height=1.2cm, rounded corners] at (0,2) {\textbf{Python + TF}};
+                        \node at (0,1.5) {\footnotesize 800 MB RAM};
+                        
+                        % Arrow
+                        \node at (0,0.7) {\Large\faArrowDown};
+                        
+                        % C box
+                        \node[draw, fill=successGreen!20, minimum width=3cm, minimum height=1.2cm, rounded corners] at (0,-0.5) {\textbf{C11 Natiu}};
+                        \node at (0,-1.0) {\footnotesize 87 MB RAM};
+                    \end{tikzpicture}
+                \end{center}
+            \end{block}
+            
+            \vspace{0.5em}
+            \begin{block}{Compilació Optimitzada}
+                \footnotesize
+                \texttt{gcc -O3 -mcpu=cortex-a53 \\
+                -mfpu=neon-vfpv4 -fopenmp}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Gestió de Memòria: Estratègia ``Ping-Pong''}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \textbf{Problema Original:}
+            \begin{itemize}
+                \item Cada capa crea nous tensors
+                \item Memòria creix linealment $O(N)$
+                \item Pics de 800+ MB
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{Solució Ping-Pong:}
+            \begin{itemize}
+                \item Només \textbf{2 buffers} de treball
+                \item Alternança: $A \rightarrow B \rightarrow A \rightarrow B$
+                \item Memòria constant $O(1)$
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{Fórmula de consum:}
+            \begin{equation*}
+                \text{Mem}_{\text{total}} \approx \text{Pesos} + \max_{i}(\text{Dim Capa}_i) \times 2
+            \end{equation*}
+        \end{column}
+        \begin{column}{0.42\textwidth}
+            \begin{center}
+                \begin{tikzpicture}[scale=0.7]
+                    % Buffers
+                    \node[draw, fill=techCyan!30, minimum width=2.5cm, minimum height=0.8cm] (A) at (0,3) {Buffer A};
+                    \node[draw, fill=starLight!50, minimum width=2.5cm, minimum height=0.8cm] (B) at (0,1.5) {Buffer B};
+                    
+                    % Layers
+                    \node[draw, fill=cosmicBlue!20, circle, minimum size=0.8cm] (L1) at (-2.5,2.25) {$L_1$};
+                    \node[draw, fill=cosmicBlue!20, circle, minimum size=0.8cm] (L2) at (2.5,2.25) {$L_2$};
+                    
+                    % Arrows
+                    \draw[->, thick, techCyan] (L1) -- (A);
+                    \draw[->, thick, techCyan] (B) -- (L1);
+                    \draw[->, thick, starLight!80!black] (A) -- (L2);
+                    \draw[->, thick, starLight!80!black] (L2) -- (B);
+                    
+                    % Label
+                    \node at (0,0.3) {\footnotesize Reutilització cíclica};
+                \end{tikzpicture}
+            \end{center}
+            
+            \vspace{0.5em}
+            \begin{exampleblock}{Resultat}
+                \centering
+                Reducció de memòria:\\
+                \textbf{796 MB → 87 MB}\\
+                (\textbf{9.2x} menys)
+            \end{exampleblock}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Optimització: Paral·lelisme i Vectorització}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{\faLayerGroup\ Paral·lelisme de Fils (OpenMP)}
+            \begin{itemize}
+                \item Independència en canals de sortida
+                \item Distribució en 4 nuclis Cortex-A53
+                \item Directiva: \texttt{\#pragma omp parallel for}
+            \end{itemize}
+            
+            \vspace{1em}
+            \textbf{\faMicrochip\ Vectorització SIMD (NEON)}
+            \begin{itemize}
+                \item Unitats vectorials de 128 bits
+                \item Processar múltiples píxels per cicle
+                \item Flags: \texttt{-mcpu=cortex-a53 -mfpu=neon}
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Validació de Paritat Numèrica}
+            
+            \vspace{0.5em}
+            Errors crítics detectats i corregits:
+            \begin{enumerate}
+                \item \textcolor{alertRed}{\faBug} Normalització d'entrada (÷65535)
+                \item \textcolor{alertRed}{\faBug} Fórmula GDN incorrecta
+                \item \textcolor{alertRed}{\faBug} Escalat de $\lambda$
+            \end{enumerate}
+            
+            \vspace{0.5em}
+            \begin{exampleblock}{Resultat Final}
+                \textbf{99.98\%} dels latents\\
+                són \textbf{bit a bit idèntics}\\
+                entre C i Python
+            \end{exampleblock}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ============================================================================
+% SECCIÓ 4: RESULTATS EXPERIMENTALS
+% ============================================================================
+\section{Resultats Experimentals}
+
+\begin{frame}{Configuració de l'Experiment}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{\faServer\ Plataforma de Proves}
+            \begin{itemize}
+                \item \textbf{Hardware:} Raspberry Pi 3B+
+                \item \textbf{CPU:} ARM Cortex-A53 @ 1.4 GHz
+                \item \textbf{RAM:} 1 GB LPDDR2
+                \item \textbf{OS:} Raspberry Pi OS 64-bit
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{\faImage\ Dataset}
+            \begin{itemize}
+                \item Imatge Sentinel-2 (T31TCG)
+                \item Dimensions: $512 \times 512$ px
+                \item 8 bandes espectrals
+                \item 16 bits/píxel (4.19 MB total)
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{\faFlask\ Comparatives}
+            \begin{table}
+                \footnotesize
+                \begin{tabular}{ll}
+                    \toprule
+                    \textbf{Mètode} & \textbf{Detalls} \\
+                    \midrule
+                    SORTENY C & GCC 10.2, OpenMP \\
+                    SORTENY Py & Python 3.9, TF 2.16 \\
+                    CCSDS 122 & MHDC (UAB) \\
+                    \bottomrule
+                \end{tabular}
+            \end{table}
+            
+            \vspace{0.5em}
+            \begin{block}{Paràmetre de Qualitat}
+                \centering
+                $\lambda = 0.1$ \\
+                (Alta qualitat)
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Resultats: Rendiment i Memòria}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \begin{table}
+                \footnotesize
+                \caption{Desglossament de Rendiment}
+                \begin{tabular}{lrrr}
+                    \toprule
+                    \textbf{Mètrica} & \textbf{C} & \textbf{Python} & \textbf{Millora} \\
+                    \midrule
+                    Temps Total & \textbf{308 s} & 451 s & \textcolor{successGreen}{+47\%} \\
+                    RAM Màxima & \textbf{87 MB} & 796 MB & \textcolor{successGreen}{9.2x} \\
+                    Ús CPU & 338\% & 27\% & \textcolor{successGreen}{Eficiència} \\
+                    \bottomrule
+                \end{tabular}
+            \end{table}
+            
+            \vspace{0.5em}
+            \textbf{Anàlisi:}
+            \begin{itemize}
+                \item \textbf{C:} Satura els 4 nuclis (338\% CPU)
+                \item \textbf{Python:} 75\% del temps en swap/IO
+                \item La memòria era el \alert{coll d'ampolla real}
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.47\textwidth}
+            \begin{center}
+                \includegraphics[width=\textwidth, height=0.6\textheight]{img/fig5_rendimiento.png}
+            \end{center}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Resultats: Qualitat de Reconstrucció}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{table}
+                \footnotesize
+                \caption{PSNR per Banda Espectral}
+                \begin{tabular}{lrr}
+                    \toprule
+                    \textbf{Banda} & \textbf{C} & \textbf{Python} \\
+                    \midrule
+                    B1 (Blue) & 78.82 dB & 78.83 dB \\
+                    B3 (Red) & 76.50 dB & 76.53 dB \\
+                    B7 (NIR) & 76.57 dB & 76.58 dB \\
+                    \midrule
+                    \textbf{Global} & \textbf{76.73 dB} & \textbf{76.73 dB} \\
+                    \bottomrule
+                \end{tabular}
+            \end{table}
+            
+            \vspace{0.5em}
+            \begin{exampleblock}{Conclusió}
+                \textbf{Qualitat idèntica} \\
+                Diferències $<$ 0.03 dB \\
+                (irrellevants a la pràctica)
+            \end{exampleblock}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{center}
+                \includegraphics[width=\textwidth, height=0.6\textheight]{img/fig4_metricas_calidad.png}
+            \end{center}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Validació Visual i Paritat de Latents}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Paritat Numèrica:}
+            \begin{itemize}
+                \item 3.15 milions de valors latents
+                \item \textbf{99.9876\%} són idèntics
+                \item Només 390 amb diferència $\pm 1$
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \textbf{Causa de les diferències:}
+            \begin{itemize}
+                \item Precisió FP: NEON vs AVX/SSE
+                \item Arrodoniment bancari en $x.5$
+            \end{itemize}
+            
+            \vspace{0.5em}
+            \begin{center}
+                \includegraphics[width=\textwidth, height=0.4\textheight]{img/fig6_histograma_latentes.png}
+            \end{center}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Inspecció Visual:}
+            \begin{center}
+                \includegraphics[width=\textwidth, height=0.65\textheight]{img/fig8_detalle_banda1.png}
+            \end{center}
+            \footnotesize{Detall Banda 1: Original vs C vs Python}
+            
+            \vspace{0.3em}
+            {\footnotesize Imatges \textbf{visualment indistingibles}}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Comparativa amb CCSDS-122 (Benchmark Industrial)}
+    \begin{table}
+        \caption{SORTENY ($\lambda=0.1$) vs CCSDS-122}
+        \begin{tabular}{lccccc}
+            \toprule
+            \textbf{Mètode} & \textbf{Temps} & \textbf{RAM} & \textbf{Ratio} & \textbf{PSNR} & \textbf{MSE} \\
+            \midrule
+            CCSDS 122 (Lossless) & \textbf{12.6 s} & \textbf{25 MB} & 1.79:1 & $\infty$ & 0.00 \\
+            CCSDS 122 (Near-LL) & 12.7 s & 25 MB & 1.79:1 & \textbf{103.5 dB} & \textbf{0.19} \\
+            \midrule
+            SORTENY C & 304 s & 87 MB & $\sim$2.5:1* & 76.7 dB & 91.3 \\
+            \bottomrule
+        \end{tabular}
+        
+        \footnotesize{*Ratio estimat basat en entropia (sense codificador aritmètic)}
+    \end{table}
+    
+    \vspace{0.5em}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textcolor{successGreen}{\faCheck} \textbf{CCSDS guanya en:}
+            \begin{itemize}
+                \item Velocitat (24x més ràpid)
+                \item Memòria (3x menys)
+                \item Qualitat lossless perfecta
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textcolor{techCyan}{\faCheck} \textbf{SORTENY guanya en:}
+            \begin{itemize}
+                \item Ratio de compressió potencial
+                \item \textbf{Adaptabilitat} (reentrenable)
+                \item Actualitzable en vol
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ============================================================================
+% SECCIÓ 5: CONCLUSIONS
+% ============================================================================
+\section{Conclusions}
+
+\begin{frame}{Conclusions Principals}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{exampleblock}{\faCheckCircle\ Èxits Aconseguits}
+                \begin{enumerate}
+                    \item \textbf{Viabilitat Demostrada}
+                        \begin{itemize}
+                            \item RAM: 796 MB → 87 MB (\textbf{-90\%})
+                            \item El sistema ja no col·lapsa
+                        \end{itemize}
+                    \item \textbf{Qualitat Preservada}
+                        \begin{itemize}
+                            \item PSNR idèntic (76.73 dB)
+                            \item Paritat 99.98\%
+                        \end{itemize}
+                    \item \textbf{Rendiment Millorat}
+                        \begin{itemize}
+                            \item Speedup 1.47x
+                            \item 4 nuclis al 338\%
+                        \end{itemize}
+                \end{enumerate}
+            \end{exampleblock}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{block}{\faLightbulb\ Aprenentatges Clau}
+                \begin{itemize}
+                    \item La \textbf{memòria} és la barrera principal, no la CPU
+                    \item És possible portar DL a sistemes embarcats \textbf{amb enginyeria adequada}
+                    \item Les transformades apreses ofereixen \textbf{flexibilitat} vs fixes
+                \end{itemize}
+            \end{block}
+            
+            \vspace{0.5em}
+            \begin{alertblock}{\faExclamationTriangle\ Limitacions}
+                \begin{itemize}
+                    \item Codificador entròpic pendent
+                    \item CCSDS encara és més ràpid
+                \end{itemize}
+            \end{alertblock}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Treball Futur}
+    \begin{columns}[T]
+        \begin{column}{0.32\textwidth}
+            \begin{block}{\faCode\ Codificador Entròpic}
+                Integrar Montsec al mateix executable C per mesurar ràtios reals (bpp).
+            \end{block}
+        \end{column}
+        \begin{column}{0.32\textwidth}
+            \begin{block}{\faMicrochip\ Acceleració HW}
+                Optimització manual amb intrínsecs NEON o Arm Compute Library.
+            \end{block}
+        \end{column}
+        \begin{column}{0.32\textwidth}
+            \begin{block}{\faRocket\ Validació en Òrbita}
+                Portar a CubeSat real: buit tèrmic, radiació (SEUs), TRL elevat.
+            \end{block}
+        \end{column}
+    \end{columns}
+    
+    \vspace{1em}
+    
+    %\begin{center}
+    %    \begin{tikzpicture}
+    %        \node[draw, fill=cosmicBlue!20, rounded corners, minimum width=10cm, minimum height=1cm] {
+    %            \textbf{Visió:} Actualitzar xarxes neuronals en vol pujant només els pesos (KB)
+    %        };
+    %    \end{tikzpicture}
+    %\end{center}
+\end{frame}
+
+% ----------------------------------------------------------------------------
+% SLIDE FINAL
+% ----------------------------------------------------------------------------
+{
+\setbeamertemplate{footline}{}
+\begin{frame}[plain]
+    \begin{center}
+        \vspace{2cm}
+        {\Huge \textbf{Gràcies per la vostra atenció!}}
+        
+        \vspace{1.5cm}
+        {\Large Preguntes?}
+        
+        \vspace{1.5cm}
+        \faEnvelope\ \texttt{1635157@uab.cat}
+        
+        \vspace{0.5cm}
+        {\footnotesize Cristhian Omar Añez López — TFG Enginyeria Informàtica — UAB 2025/26}
+    \end{center}
+\end{frame}
+}
+
+% ============================================================================
+% APÈNDIX (SLIDES EXTRA PER SI CAL)
+% ============================================================================
+\appendix
+
+\begin{frame}[plain]
+    \begin{center}
+        {\Large \textbf{Slides Addicionals}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Arquitectura Detallada SORTENY}
+    \begin{columns}[T]
+        \begin{column}{0.45\textwidth}
+            \textbf{Etapes del Compressor:}
+            \vspace{0.5em}
+            \begin{enumerate}
+                \item \textbf{(A) Transformada Espectral:}
+                    \begin{itemize}
+                        \item $x' = Ax + b$
+                        \item Similar a PCA/KLT
+                        \item Descorrelació de bandes
+                    \end{itemize}
+                \item \textbf{(B) CNN Espacial:}
+                    \begin{itemize}
+                        \item Conv2D amb stride
+                        \item Normalització GDN
+                        \item Downsampling progressiu
+                    \end{itemize}
+                \item \textbf{(C) Modulació:}
+                    \begin{itemize}
+                        \item $\hat{Y} = \text{round}(Y \cdot M(\lambda))$
+                        \item Control de qualitat/taxa
+                    \end{itemize}
+            \end{enumerate}
+        \end{column}
+        \begin{column}{0.52\textwidth}
+            \begin{center}
+                \includegraphics[width=\textwidth]{img/SORTENY_DIAGRAM.png}
+            \end{center}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Detall: Normalització GDN}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Fórmula Matemàtica:}
+            \begin{equation*}
+                y_i = \frac{x_i}{\sqrt{\beta_i + \sum_j \gamma_{ij} x_j^2}}
+            \end{equation*}
+            
+            \vspace{0.5em}
+            \textbf{Per què GDN i no ReLU?}
+            \begin{itemize}
+                \item ``Gaussianitza'' les dades
+                \item Coeficients més independents
+                \item Millor per a codificació entròpica
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Implementació en C:}
+            \begin{itemize}
+                \item Paràmetres $\beta_i$, $\gamma_{ij}$ apresos
+                \item Gestió de $\epsilon$ per estabilitat
+                \item Bucles paral·lelitzats amb OpenMP
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Comparativa Visual Completa}
+    \begin{center}
+        \includegraphics[width=0.9\textwidth]{img/fig1_bandas_comparacion.png}
+    \end{center}
+    \footnotesize{Dalt: Original | Mig: SORTENY C | Baix: SORTENY Python}
+\end{frame}
+
+\begin{frame}{Mapes d'Error}
+    \begin{center}
+        \includegraphics[width=0.85\textwidth]{img/fig2_mapa_error.png}
+    \end{center}
+    \footnotesize{Error absolut |Original - Reconstruïda|. Distribució uniforme, sense artefactes.}
+\end{frame}
+
+\begin{frame}{Raspberry Pi 3B+ com a Simulador de CubeSat}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Per què Raspberry Pi?}
+            \begin{itemize}
+                \item ARM Cortex-A53 = mateixa arquitectura que Xilinx Zynq UltraScale+ (OBCs reals)
+                \item 1 GB RAM simula restriccions reals
+                \item microSD lenta → simula flash de vol
+                \item Cost baix per experimentació
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Validació:}
+            \begin{itemize}
+                \item NASA té guies per Raspberry Pi a l'espai
+                \item Estudis IEEE confirmen Cortex-A53 per processament d'imatges a bord
+                \item Codi portable a HW de vol real
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\end{document}

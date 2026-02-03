@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>main.c - SORTENY Encoder</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <style>
+        :root {
+            --bg: #f6f8fa;
+            --border: #d0d7de;
+            --text: #24292f;
+            --header-bg: #2c3e50;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        .header {
+            background: var(--header-bg);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .header a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        .header a:hover { text-decoration: underline; }
+        .file-info {
+            background: white;
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 2rem;
+            font-size: 0.875rem;
+            color: #57606a;
+        }
+        .code-container {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin: 1rem 2rem;
+            overflow: hidden;
+        }
+        pre {
+            margin: 0;
+            padding: 1rem;
+            overflow-x: auto;
+            font-size: 0.875rem;
+            line-height: 1.45;
+        }
+        code {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+        .line-numbers {
+            counter-reset: line;
+        }
+        .line-numbers code {
+            counter-increment: line;
+        }
+        .line-numbers code::before {
+            content: counter(line);
+            display: inline-block;
+            width: 3em;
+            margin-right: 1em;
+            padding-right: 0.5em;
+            text-align: right;
+            color: #6e7781;
+            border-right: 1px solid var(--border);
+            user-select: none;
+        }
+        .hljs { background: white !important; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📄 main.c</h1>
+        <a href="../../../index.html">← Tornar a l'índex</a>
+    </div>
+    <div class="file-info">
+        <strong>Ruta:</strong> src/c/main.c &nbsp;|&nbsp;
+        <strong>Descripció:</strong> Punt d'entrada principal del compressor SORTENY. Implementa el pipeline d'inferència complet.
+    </div>
+    <div class="code-container">
+        <pre class="line-numbers"><code class="language-c">#define _POSIX_C_SOURCE 200112L
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;math.h&gt;
+#include "sorteny_model.h"
+#include "io_helpers.h"
+#ifdef _OPENMP
+#include &lt;omp.h&gt;
+#endif
+
+#define DEBUG_DUMP_DIR "debug_dumps"
+
+// Dimensiones del Modelo
+#define BANDS 8
+#define H_IN 512
+#define W_IN 512
+
+// Dimensiones AnalysisTransform (strides=2)
+#define C0 128
+#define H1 (H_IN / 2)   // 256
+#define W1 (W_IN / 2)   // 256
+#define C1 128
+#define H2 (H1 / 2)     // 128
+#define W2 (W1 / 2)     // 128
+#define C2 128
+#define H3 (H2 / 2)     // 64
+#define W3 (W2 / 2)     // 64
+#define C3_AN 384       // Canales de salida de Analysis (Latent)
+#define H4 (H3 / 2)     // 32
+#define W4 (W3 / 2)     // 32
+
+// Dimensiones ModulatingTransform
+#define MOD_IN 1        // 1 valor (lambda)
+#define MOD_HIDDEN 192  // Capa oculta
+#define MOD_OUT (BANDS * C3_AN) // 8 * 384 = 3072
+// Escalado interno de la capa Lambda del ModulatingTransform: x / maxval
+#define MOD_LAMBDA_SCALE 0.05f  // maxval del modelo Python
+#define MIN_LAMBDA 0.0f  // Límite inferior de lambda según SORTENY.py
+
+// Dimensiones Tensor Latente Final (Y)
+#define C_Y_FLAT MOD_OUT // 3072
+#define H_Y H4           // 32
+#define W_Y W4           // 32
+
+// El normalizador de la primera capa Lambda de AnalysisTransform
+#define NORM_CONST 65535.0f // (2**16) - 1
+
+// Límite superior de lambda alineado con SORTENY.py
+#define DEFAULT_MAX_LAMBDA 0.125f // 1/8
+
+
+/**
+ * @brief Reserva un tensor planar (C x H x W) en el heap.
+ */
+static float* allocate_tensor(size_t C, size_t H, size_t W, const char* name) {
+    size_t bytes = C * H * W * sizeof(float);
+    void* mem = NULL;
+    int rc = posix_memalign(&amp;mem, 64, bytes);
+    float* ptr = (rc == 0) ? (float*)mem : NULL;
+    if (!ptr) {
+        fprintf(stderr, "Error: Fallo de reserva para el tensor: %s\n", name);
+        return NULL;
+    }
+    return ptr;
+}
+
+int main(int argc, char* argv[]) {
+    if (argc &lt; 4 || argc &gt; 6) {
+        fprintf(stderr, "Uso: %s &lt;input_image.raw&gt; &lt;lambda&gt; &lt;output_Y_hat.bin&gt; [model_dir] [max_lambda]\n", argv[0]);
+        fprintf(stderr, "Ej:   %s T31TCG_...raw 0.01 salida.bin [weights/pesos_bin] [0.05]\n", argv[0]);
+        return 1;
+    }
+
+    const char* input_file = argv[1];
+    float lambda = (float)atof(argv[2]);
+    const char* output_file = argv[3];
+    const char* model_path = (argc &gt;= 5) ? argv[4] : "weights/pesos_bin";
+    
+    float max_lambda = 0.0f;
+    if (argc == 6) {
+        max_lambda = (float)atof(argv[5]);
+        if (max_lambda &lt;= 0.0f) {
+            fprintf(stderr, "[WARN] max_lambda &lt;= 0. Ignorando escalado externo.\n");
+            max_lambda = DEFAULT_MAX_LAMBDA;
+        }
+    } else {
+        max_lambda = DEFAULT_MAX_LAMBDA;
+    }
+    // Recorte y escalado alineado con Python: lambda en [0, max_lambda]
+    if (lambda &lt; 0.0f) lambda = 0.0f;
+    if (lambda &gt; max_lambda) lambda = max_lambda;
+
+    int ret = 1; // por defecto error
+
+    // Punteros inicializados a NULL para cleanup seguro
+    SORTENY_Model* model = NULL;
+    float* in_image_tensor = NULL;
+    float* spectral_out = NULL;
+    float* scratch_a = NULL;
+    float* scratch_b = NULL;
+    float* band_normalized = NULL;
+    float* band_Y = NULL;
+    float* mod_hidden = NULL;
+    float* modulator  = NULL;
+    float* conv0_pre_all = NULL;
+    float* gdn0_all = NULL;
+    float* gdn1_all = NULL;
+    float* gdn2_all = NULL;
+
+    // Modo de paridad estricta
+    const char* strict_env = getenv("STRICT_PARITY");
+    int strict_parity = (strict_env &amp;&amp; strict_env[0] == '1');
+    if (strict_parity) {
+        printf("[STRICT] Parity mode enabled: deterministic + half-to-even.\n");
+#ifdef _OPENMP
+        omp_set_dynamic(0);
+        omp_set_num_threads(1);
+#endif
+    }
+
+    // 1. Cargar Pesos
+    printf("Cargando modelo desde '%s'...\n", model_path);
+    model = load_model_weights(model_path);
+    if (model == NULL) {
+        goto cleanup;
+    }
+
+    // 2. Cargar Imagen de Entrada (RAW sin normalizar)
+    in_image_tensor = load_image_bsq_u16_to_planar_f32_ex(input_file, BANDS, H_IN, W_IN, 1, 0); 
+    if (in_image_tensor == NULL) {
+        goto cleanup;
+    }
+
+    // 3. Reservar Memoria para Tensores Intermedios
+    printf("Reservando memoria para tensores intermedios...\n");
+    spectral_out = allocate_tensor(BANDS, H_IN, W_IN, "spectral_out");
+    scratch_a = allocate_tensor(C0, H1, W1, "scratch_a");
+    scratch_b = allocate_tensor(C0, H1, W1, "scratch_b");
+    band_Y = allocate_tensor(C3_AN, H4, W4, "band_Y");
+    mod_hidden = allocate_tensor(MOD_HIDDEN, 1, 1, "mod_hidden");
+    modulator  = allocate_tensor(MOD_OUT, 1, 1, "modulator (M)");
+    
+    // Reservar buffers para volcados por etapas SOLO si se solicitan
+    const char* dump_stages_env = getenv("DUMP_STAGES");
+    int do_stages = (dump_stages_env &amp;&amp; dump_stages_env[0] == '1');
+    if (do_stages) {
+        conv0_pre_all = allocate_tensor(BANDS * C0, H1, W1, "conv0_pre_all");
+        gdn0_all = allocate_tensor(BANDS * C0, H1, W1, "gdn0_all");
+        gdn1_all = allocate_tensor(BANDS * C1, H2, W2, "gdn1_all");
+        gdn2_all = allocate_tensor(BANDS * C2, H3, W3, "gdn2_all");
+    }
+
+    if (!spectral_out || !scratch_a || !scratch_b || !band_Y || !mod_hidden || !modulator) {
+        fprintf(stderr, "Error: fallo de reserva de memoria para tensores.\n");
+        goto cleanup;
+    }
+
+    // 4. --- INICIO DEL PIPELINE DE INFERENCIA ---
+    printf("Iniciando pipeline de inferencia...\n");
+    
+    // Etapa 1: Transformada Espectral
+    printf("  (1/5) Ejecutando Transformada Espectral...\n");
+    apply_spectral_analysis(spectral_out, in_image_tensor, &amp;model-&gt;spectral_an, H_IN, W_IN);
+    
+    printf("  (2/5) Init Analysis buffers...\n");
+    free(in_image_tensor); in_image_tensor = NULL;
+
+    // Etapa 2: Modulating Transform
+    if (max_lambda &gt; 0.0f) {
+        printf("  (3/5) Ejecutando Modulating Transform (Lambda=%.6f, max_lambda=%.6f)\n", lambda, max_lambda);
+    } else {
+        printf("  (3/5) Ejecutando Modulating Transform (Lambda=%.6f, sin max_lambda)\n", lambda);
+    }
+
+    // Cuantización de lambda
+    uint8_t q_byte = (uint8_t)lrintf(((lambda - MIN_LAMBDA) / (max_lambda - MIN_LAMBDA)) * 255.0f);
+    float lambda_quant = ((float)q_byte / 255.0f) * (max_lambda - MIN_LAMBDA) + MIN_LAMBDA;
+
+    float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
+    apply_dense(mod_hidden, input_lambda, &amp;model-&gt;modulating_mod.dense_0);
+    apply_relu(mod_hidden, MOD_HIDDEN);
+    apply_dense(modulator, mod_hidden, &amp;model-&gt;modulating_mod.dense_1);
+    apply_relu(modulator, MOD_OUT);
+    printf("        ...Modulador 'M' calculado. input_lambda=%.4f, M[0]=%.2f, M[100]=%.2f\n", 
+           input_lambda[0], modulator[0], modulator[100]);
+    
+    // Preparar salida en streaming
+    FILE* f_out = fopen(output_file, "wb");
+    if (!f_out) { fprintf(stderr, "Error: no se pudo abrir '%s' para escritura.\n", output_file); goto cleanup; }
+
+    // Cabecera estilo Python
+    uint16_t header[5];
+    header[0] = (uint16_t)BANDS;
+    header[1] = (uint16_t)H_IN;
+    header[2] = (uint16_t)W_IN;
+    header[3] = (uint16_t)2;
+    header[4] = (uint16_t)C3_AN;
+    size_t hwritten = fwrite(header, sizeof(uint16_t), 5, f_out);
+    if (hwritten != 5) { fprintf(stderr, "Error: escritura de cabecera incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
+
+    // Mapa Q (32x32) constante
+    uint8_t q_map[H4 * W4];
+    for (size_t i = 0; i &lt; H4 * W4; ++i) q_map[i] = q_byte;
+    size_t qwritten = fwrite(q_map, sizeof(uint8_t), H4 * W4, f_out);
+    if (qwritten != H4 * W4) { fprintf(stderr, "Error: escritura de Q incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
+
+    // Dumps opcionales
+    const char* dump_ypre_env = getenv("DUMP_Y_PRE");
+    const char* dump_debug_env = getenv("DEBUG_DUMP");
+    int do_dump_ypre = ((dump_ypre_env &amp;&amp; dump_ypre_env[0] == '1') || (dump_debug_env &amp;&amp; dump_debug_env[0] == '1'));
+    FILE* f_ypre = NULL;
+    if (do_dump_ypre) {
+        char p_ypre[256]; snprintf(p_ypre, sizeof(p_ypre), "%s/%s", DEBUG_DUMP_DIR, "Y_pre_c.bin");
+        f_ypre = fopen(p_ypre, "wb"); if (!f_ypre) fprintf(stderr, "[WARN] No se pudo abrir Y_pre_c.bin\n");
+    }
+    const char* dump_y_float_env = getenv("DUMP_Y_FLOAT");
+    int dump_y_float = (dump_y_float_env &amp;&amp; dump_y_float_env[0] == '1');
+    FILE* f_yfloat = NULL;
+    if (dump_y_float) {
+        char p_yfloat[256]; snprintf(p_yfloat, sizeof(p_yfloat), "%s/%s", DEBUG_DUMP_DIR, "Y_float_c.bin");
+        f_yfloat = fopen(p_yfloat, "wb"); if (!f_yfloat) fprintf(stderr, "[WARN] No se pudo abrir Y_float_c.bin\n");
+    }
+
+    // Etapa 3: Analysis Transform (Bucle sobre las 8 bandas)
+    printf("  (4/5) Ejecutando Analysis Transform (Bucle de 8 bandas) y cuantización en streaming...\n"); 
+    
+    band_normalized = (float*)malloc(H_IN * W_IN * sizeof(float));
+    if (!band_normalized) {
+        fprintf(stderr, "Error: No se pudo alocar memoria para band_normalized\n");
+        goto cleanup;
+    }
+
+    const char* use_half_even_env = getenv("USE_HALF_EVEN");
+    int use_half_even = strict_parity ? 1 : (use_half_even_env &amp;&amp; use_half_even_env[0] == '1');
+    size_t plane_sz = (size_t)H_Y * W_Y;
+
+    for (int b = 0; b &lt; BANDS; b++) {
+        const float* band_input_raw = spectral_out + (b * H_IN * W_IN);
+        
+        // Normalizar entrada (Lambda layer)
+        for (int i = 0; i &lt; H_IN * W_IN; i++) {
+            band_normalized[i] = band_input_raw[i] / NORM_CONST;
+        }
+
+        // 1. Capa 0
+        apply_conv2d(scratch_a, band_normalized, &amp;model-&gt;analysis_an.conv_0, H_IN, W_IN);
+
+        if (do_stages &amp;&amp; conv0_pre_all) {
+            size_t sz = (size_t)C0 * (size_t)H1 * (size_t)W1;
+            memcpy(conv0_pre_all + (b * sz), scratch_a, sz * sizeof(float));
+        }
+        
+        // 2. GDN 0
+        apply_gdn(scratch_b, scratch_a, &amp;model-&gt;analysis_an.gdn_0, H1, W1);
+
+        if (do_stages &amp;&amp; gdn0_all) {
+            size_t sz = (size_t)C0 * (size_t)H1 * (size_t)W1;
+            memcpy(gdn0_all + (b * sz), scratch_b, sz * sizeof(float));
+        }
+        
+        // 3. Capa 1
+        apply_conv2d(scratch_a, scratch_b, &amp;model-&gt;analysis_an.conv_1, H1, W1);
+        
+        // 4. GDN 1
+        apply_gdn(scratch_b, scratch_a, &amp;model-&gt;analysis_an.gdn_1, H2, W2);
+        if (do_stages &amp;&amp; gdn1_all) {
+            size_t sz = (size_t)C1 * (size_t)H2 * (size_t)W2;
+            memcpy(gdn1_all + (b * sz), scratch_b, sz * sizeof(float));
+        }
+        
+        // 5. Capa 2
+        apply_conv2d(scratch_a, scratch_b, &amp;model-&gt;analysis_an.conv_2, H2, W2);
+        
+        // 6. GDN 2
+        apply_gdn(scratch_b, scratch_a, &amp;model-&gt;analysis_an.gdn_2, H3, W3);
+        if (do_stages &amp;&amp; gdn2_all) {
+            size_t sz = (size_t)C2 * (size_t)H3 * (size_t)W3;
+            memcpy(gdn2_all + (b * sz), scratch_b, sz * sizeof(float));
+        }
+        
+        // 7. Layer 3 (Output)
+        apply_conv2d(band_Y, scratch_b, &amp;model-&gt;analysis_an.conv_3, H3, W3);
+        
+        // 8. Modulación + Cuantización por banda
+        for (size_t c = 0; c &lt; C3_AN; c++) {
+            float M_val = modulator[b * C3_AN + c];
+            size_t plane_off = c * plane_sz;
+            for (size_t p = 0; p &lt; plane_sz; p++) {
+                float prod = band_Y[plane_off + p] * M_val;
+                if (use_half_even) {
+                    float _n = floorf(prod);
+                    float _diff = prod - _n;
+                    float r_he = (_diff &gt; 0.5f) ? (_n + 1.0f) : (_diff &lt; 0.5f ? _n : ((fmodf(_n, 2.0f) == 0.0f) ? _n : (_n + 1.0f)));
+                    band_Y[plane_off + p] = r_he;
+                } else {
+                    band_Y[plane_off + p] = roundf(prod);
+                }
+            }
+        }
+
+        // Escribir banda cuantizada
+        for (size_t c = 0; c &lt; C3_AN; c++) {
+            size_t plane_off = c * plane_sz;
+            for (size_t p = 0; p &lt; plane_sz; p++) {
+                int32_t qv = (int32_t)lrintf(band_Y[plane_off + p]);
+                if (fwrite(&amp;qv, sizeof(int32_t), 1, f_out) != 1) {
+                    fprintf(stderr, "Error: escritura incompleta en salida (banda %d, canal %zu)\n", b, c);
+                    fclose(f_out); f_out=NULL; goto cleanup;
+                }
+            }
+        }
+    }
+
+    printf("        ...Analysis Transform + cuantización completada.\n");
+
+    // 5. --- FIN DEL PIPELINE DE INFERENCIA ---
+    free(band_normalized); band_normalized = NULL;
+    free(spectral_out); spectral_out = NULL;
+    free(scratch_a); scratch_a = NULL;
+    free(scratch_b); scratch_b = NULL;
+    
+    if (conv0_pre_all) { free(conv0_pre_all); conv0_pre_all = NULL; }
+    if (gdn0_all) { free(gdn0_all); gdn0_all = NULL; }
+    if (gdn1_all) { free(gdn1_all); gdn1_all = NULL; }
+    if (gdn2_all) { free(gdn2_all); gdn2_all = NULL; }
+
+    if (f_ypre) { fclose(f_ypre); f_ypre = NULL; }
+    if (f_yfloat) { fclose(f_yfloat); f_yfloat = NULL; }
+
+    ret = 0;
+
+cleanup:
+    if (f_out) fclose(f_out);
+    if (model) free_model_weights(model);
+    
+    if (in_image_tensor) free(in_image_tensor);
+    if (spectral_out) free(spectral_out);
+    if (band_Y) free(band_Y);
+    if (mod_hidden) free(mod_hidden);
+    if (modulator) free(modulator);
+    if (band_normalized) free(band_normalized);
+
+    return ret;
+}</code></pre>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

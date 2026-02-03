@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dossier TFG - Implementació compressor basat en xarxes neuronals per a ús en satèl·lit</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --accent: #e74c3c;
+            --bg: #f8f9fa;
+            --text: #333;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 2rem 3rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        header {
+            text-align: center;
+            border-bottom: 3px solid var(--secondary);
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        h1 {
+            color: var(--primary);
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 1.1rem;
+        }
+        .author {
+            margin-top: 1rem;
+            font-weight: 600;
+        }
+        .meta {
+            color: #888;
+            font-size: 0.9rem;
+        }
+        h2 {
+            color: var(--primary);
+            margin: 1.5rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #eee;
+        }
+        .section {
+            margin-bottom: 1.5rem;
+        }
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        li {
+            padding: 0.6rem 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        li:last-child { border-bottom: none; }
+        a {
+            color: var(--secondary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        a:hover {
+            color: var(--accent);
+            text-decoration: underline;
+        }
+        .icon { margin-right: 0.5rem; }
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            background: #e8f4fc;
+            color: var(--secondary);
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+        .badge.code { background: #e8f8f0; color: #27ae60; }
+        .badge.pdf { background: #fce8e8; color: #c0392b; }
+        .description {
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 0.3rem;
+        }
+        footer {
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid #eee;
+            text-align: center;
+            color: #888;
+            font-size: 0.85rem;
+        }
+        .highlight-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .info-box {
+            background: #e8f4fc;
+            border-left: 4px solid #3498db;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Implementació compressor basat en xarxes neuronals per a ús en satèl·lit</h1>
+            <p class="subtitle">Treball Final de Grau en Enginyeria Informàtica</p>
+            <p class="author">Cristhian Omar Añez López</p>
+            <p class="meta">Universitat Autònoma de Barcelona · Curs 2025/26</p>
+            <p class="meta">Tutor: Sebastià Mijares Verdú</p>
+        </header>
+
+        <div class="highlight-box">
+            <strong>Llista de Canvis:</strong> <a href="LLISTA_CANVIS.html">Consulta l'historial de modificacions dels documents lliurats</a>
+        </div>
+
+        <section class="section">
+            <h2>1. Documentació i Informes</h2>
+            <ul>
+                <li>
+                    <a href="docs/informes/TFG_Entrega_1.pdf">Entrega 1: Proposta Inicial</a>
+                    <span class="badge pdf">PDF</span>
+                    <p class="description">Introducció, objectius, fases del projecte i referències inicials.</p>
+                </li>
+                <li>
+                    <a href="docs/informes/TFG_Entrega_2.pdf">Entrega 2: Revisió de Tecnologies</a>
+                    <span class="badge pdf">PDF</span>
+                    <p class="description">Anàlisi de SORTENY, estàndards CCSDS i plataforma Raspberry Pi.</p>
+                </li>
+                <li>
+                    <a href="docs/informes/TFG_Entrega_3.pdf">Entrega 3: Informe de Progrés II</a>
+                    <span class="badge pdf">PDF</span>
+                    <p class="description">Optimització, avaluació experimental i resultats preliminars.</p>
+                </li>
+                <li>
+                    <a href="docs/informes/Entrega Final.pdf">Memòria Final</a>
+                    <span class="badge pdf">PDF</span>
+                    <p class="description">Document complet del TFG amb tots els resultats i conclusions.</p>
+                </li>
+                <li>
+                    <a href="docs/presentacion/Presentacion.pdf">Presentació Final</a>
+                    <span class="badge pdf">PDF</span>
+                    <p class="description">Resum visual del projecte per a la defensa del TFG.</p>
+                </li>
+            </ul>
+        </section>
+
+        <section class="section">
+            <h2>2. Codi Font</h2>
+            
+            <h3 style="color: #27ae60; margin: 1rem 0 0.5rem; font-size: 1rem;">Implementació C (Motor d'Inferència)</h3>
+            <ul>
+                <li>
+                    <a href="src/c/html/main.c.html">main.c</a>
+                    <span class="badge code">C</span>
+                    <p class="description">Punt d'entrada, càrrega de pesos i pipeline d'inferència complet.</p>
+                </li>
+                <li>
+                    <a href="src/c/html/sorteny_layers.c.html">sorteny_layers.c</a>
+                    <span class="badge code">C</span>
+                    <p class="description">Implementació de capes: Conv2D, GDN, Dense, ReLU, Spectral Transform.</p>
+                </li>
+                <li>
+                    <a href="src/c/html/sorteny_model.c.html">sorteny_model.c</a>
+                    <span class="badge code">C</span>
+                    <p class="description">Càrrega dinàmica de pesos des de fitxers TSV/binaris.</p>
+                </li>
+                <li>
+                    <a href="src/c/html/sorteny_model.h.html">sorteny_model.h</a>
+                    <span class="badge code">C</span>
+                    <p class="description">Estructures de dades: LayerWeights, SortenyModel.</p>
+                </li>
+                <li>
+                    <a href="src/c/html/io_helpers.c.html">io_helpers.c</a>
+                    <span class="badge code">C</span>
+                    <p class="description">Funcions E/S per imatges RAW (BSQ uint16 → float32).</p>
+                </li>
+                <li>
+                    <a href="src/c/html/io_helpers.h.html">io_helpers.h</a>
+                    <span class="badge code">C</span>
+                    <p class="description">Declaracions de les funcions d'entrada/sortida.</p>
+                </li>
+            </ul>
+
+            <h3 style="color: #27ae60; margin: 1.5rem 0 0.5rem; font-size: 1rem;">Codi Python</h3>
+            <ul>
+                <li>
+                    <a href="src/python/">src/python/</a>
+                    <span class="badge code">Python</span>
+                    <p class="description">Scripts de validació, benchmarks i utilitats (24 arxius organitzats).</p>
+                </li>
+                <li>
+                    <a href="scripts/">scripts/</a>
+                    <span class="badge code">Bash</span>
+                    <p class="description">Scripts d'automatització per benchmarks i desplegament a Raspberry Pi.</p>
+                </li>
+            </ul>
+        </section>
+
+        <section class="section">
+            <h2>3. Diagrames i Figures</h2>
+            <ul>
+                <li>
+                    <a href="docs/diagramas/thumbnail_TFG2025_CristhianAnez_SORTENYdiagrama.001.png">Arquitectura SORTENY</a>
+                    <span class="badge" style="background: #fef3e2; color: #d97706;">PNG</span>
+                    <p class="description">Diagrama de l'arquitectura del compressor amb les 3 etapes principals.</p>
+                </li>
+                <li>
+                    <a href="docs/diagramas/thumbnail_1D-2D_framework.png">Framework 1D-2D</a>
+                    <span class="badge" style="background: #fef3e2; color: #d97706;">PNG</span>
+                    <p class="description">Esquema del processament espectral i espacial.</p>
+                </li>
+            </ul>
+        </section>
+
+        <section class="section">
+            <h2>4. Models i Pesos</h2>
+            <ul>
+                <li>
+                    <a href="models/">models/</a>
+                    <span class="badge" style="background: #fff7ed; color: #ea580c;">TensorFlow</span>
+                    <p class="description">Model TensorFlow SORTENY_Sentinel2_model (SavedModel format).</p>
+                </li>
+                <li>
+                    <a href="weights/">weights/</a>
+                    <span class="badge" style="background: #f0f9ff; color: #0369a1;">Binari</span>
+                    <p class="description">Pesos binaris extraïts per a la inferència en C (5 configuracions).</p>
+                </li>
+            </ul>
+        </section>
+
+                <section class="section">
+            <h2>5. Codi Font LaTeX</h2>
+            <ul>
+                <li>
+                    <a href="docs/informes/informe1.tex">Entrega 1</a>
+                    <span class="badge" style="background: #f0e6ff; color: #7c3aed;">LaTeX</span>
+                    <p class="description">Codi font LaTeX de l'Entrega 1 (Proposta Inicial).</p>
+                </li>
+                <li>
+                    <a href="docs/informes/informe2.tex">Entrega 2</a>
+                    <span class="badge" style="background: #f0e6ff; color: #7c3aed;">LaTeX</span>
+                    <p class="description">Codi font LaTeX de l'Entrega 2 (Revisió de Tecnologies).</p>
+                </li>
+                <li>
+                    <a href="docs/informes/informe3.tex">Entrega 3</a>
+                    <span class="badge" style="background: #f0e6ff; color: #7c3aed;">LaTeX</span>
+                    <p class="description">Codi font LaTeX de l'Entrega 3 (Informe de Progrés II).</p>
+                </li>
+                <li>
+                    <a href="docs/informes/Entrega Final.tex">Entrega Final</a>
+                    <span class="badge" style="background: #f0e6ff; color: #7c3aed;">LaTeX</span>
+                    <p class="description">Codi font LaTeX de la Memòria Final.</p>
+                </li>
+                <li>
+                    <a href="docs/presentacion/Presentacion.tex">Presentacion</a>
+                    <span class="badge" style="background: #f0e6ff; color: #7c3aed;">LaTeX</span>
+                    <p class="description">Codi font LaTeX de la presentació (Beamer).</p>
+                </li>
+            </ul>
+        </section>
+
+        <section class="section">
+            <h2>6. Instruccions d'Ús</h2>
+            <ul>
+                <li>
+                    <a href="README.md">README</a>
+                    <span class="badge" style="background: #f0fdf4; color: #16a34a;">Markdown</span>
+                    <p class="description">Guia ràpida de compilació, execució i estructura del projecte.</p>
+                </li>
+                <li>
+                    <a href="Makefile">Makefile</a>
+                    <span class="badge code">Make</span>
+                    <p class="description">Sistema de compilació per a l'executable en C.</p>
+                </li>
+                <li>
+                    <a href="requirements.txt">Requirements</a>
+                    <span class="badge code">Text</span>
+                    <p class="description">Dependències Python necessàries per a la validació.</p>
+                </li>
+            </ul>
+        </section>
+
+        <section class="section">
+            <h2>7. Dades de Prova</h2>
+            <ul>
+                <li>
+                    <a href="data/">data/</a>
+                    <span class="badge" style="background: #fef2f2; color: #dc2626;">RAW</span>
+                    <p class="description">Imatge Sentinel-2 de prova (8 bandes, 512×512, uint16).</p>
+                </li>
+            </ul>
+        </section>
+
+        <footer>
+            <p>Dossier TFG · Grau en Enginyeria Informàtica · UAB · Febrer 2026</p>
+            <p>Menció: Tecnologies de la Informació</p>
+        </footer>
+    </div>
+</body>
+</html>

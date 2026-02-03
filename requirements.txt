@@ -1,0 +1,7 @@
+# Requisitos recomendados (versiones alineadas)
+# Opción estable: TensorFlow 2.14 + TFC 2.14
+tensorflow==2.14.1
+tensorflow-compression==2.14.1
+numpy>=1.26,<2.0
+# Para evitar conflictos con paquetes que requieren typing-extensions recientes
+typing-extensions>=4.6

@@ -1,0 +1,462 @@
+{
+  "count": 40,
+  "weights": [
+    {
+      "filename": "spectral__layer_with_weights-0_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/spectral__layer_with_weights-0_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        8,
+        8
+      ],
+      "dtype": "float32",
+      "size_bytes": 256,
+      "sha256": "c76c54181c61b3f812ffc547dd7df547565c82fe17e8f2f504ae0f614f7f30c5"
+    },
+    {
+      "filename": "analysis__layer_with_weights-0__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__layer_with_weights-0__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "56f35fb499df4a05c7f395ab5e527e75532c3f620753b9e16a2dbe0c20987130"
+    },
+    {
+      "filename": "analysis__layer_with_weights-1__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__layer_with_weights-1__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "ab641f59e51db1e298c43f9b0807d2dba3e1ac2ac5a05230fa927e33608f90af"
+    },
+    {
+      "filename": "analysis__layer_with_weights-2__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__layer_with_weights-2__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "e5ca12b25bc7ecc8141f202bbd1f97c7147cc41a450d6d423e015e9841bbb2ae"
+    },
+    {
+      "filename": "analysis__variables_1_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_1_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "a9a0641eac635036d5d56c096ab4aa9103e2e8b00ce8a76430132ac15fdaf2e2"
+    },
+    {
+      "filename": "analysis__variables_11_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_11_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "38af672fb61961a202351efe2d8e2a696280777055a8fab72f01eac5ecdf551c"
+    },
+    {
+      "filename": "analysis__variables_12_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_12_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "c9b3e800fc683f169309eb8dd4e435fd073ea27fb4862272f910ae88a1d527c2"
+    },
+    {
+      "filename": "analysis__variables_13_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_13_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 983040,
+      "sha256": "24e45946c660fd8154b5e7ffd6c9fddbce23a17c48fb24db81e138022b8771c8"
+    },
+    {
+      "filename": "analysis__variables_14_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_14_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 983040,
+      "sha256": "96812ed7a7facc2bb8177e7a6b6ef07c48ddf274e767153ff92de5ace0bf9a58"
+    },
+    {
+      "filename": "analysis__variables_15_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_15_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        384,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 2949120,
+      "sha256": "6855d3b49b43175ccde88783fa8f7eb2d61ee978d19cfa80c9527cef019834d0"
+    },
+    {
+      "filename": "analysis__variables_16_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_16_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        384,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 2949120,
+      "sha256": "a875134f3193d23a2f98632c1ecf02646fef5868aa6a0befed9ce6fed2deca39"
+    },
+    {
+      "filename": "analysis__variables_2_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_2_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "b792394711d1de0decc5fde2d83a17022df857e1e854b8ae97c1b93485a465b2"
+    },
+    {
+      "filename": "analysis__variables_3_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_3_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        1
+      ],
+      "dtype": "float32",
+      "size_bytes": 7680,
+      "sha256": "b24533d2b8405b0ec7e0274287b14bcbe488b1420c8e61f71fb2b675f2aac4cf"
+    },
+    {
+      "filename": "analysis__variables_4_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_4_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        1
+      ],
+      "dtype": "float32",
+      "size_bytes": 7680,
+      "sha256": "d38d6fb6668c36f44a2be76f65f953b503bf61fc1081638d2320cb24e59b56c2"
+    },
+    {
+      "filename": "analysis__variables_6_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_6_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "c38f6ec6faa47c7ee79218a06cde138c3b7a7a5f7538ed38b72812f9e4455645"
+    },
+    {
+      "filename": "analysis__variables_7_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_7_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "953d1db6bcb969f05be74a2285d23eae37095a90d05c3f1007be73506a462934"
+    },
+    {
+      "filename": "analysis__variables_8_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_8_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 983040,
+      "sha256": "6c92e42698256ef1b08a8ec671e83b0dce0b2ec87900ed80066884827962e38b"
+    },
+    {
+      "filename": "analysis__variables_9_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/analysis__variables_9_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 983040,
+      "sha256": "c8895ce8621eb366cd05bc65e27433102b1e31c4654fb2ecbc46cce6479ba3dd"
+    },
+    {
+      "filename": "synthesis__layer_with_weights-0__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__layer_with_weights-0__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "38c39865880b444180eed322e2b841c9a1e77e6d3dfed4ad9e00e43aa06c4de9"
+    },
+    {
+      "filename": "synthesis__layer_with_weights-1__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__layer_with_weights-1__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "f14b980cfaaaea1ef1d29979f31401ede2eebef43f0ecc3a4f1b6727ad080b4a"
+    },
+    {
+      "filename": "synthesis__layer_with_weights-2__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__layer_with_weights-2__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "fc09f82810067f97452ad2b8f98ddeca4a31c0c9e9f586c1d06b7812ddd9a729"
+    },
+    {
+      "filename": "synthesis__layer_with_weights-3__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__layer_with_weights-3__bias_parameter_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        1
+      ],
+      "dtype": "float32",
+      "size_bytes": 4,
+      "sha256": "64bf7d4c7275f9c7e16dfe8eb9396f784c21a0b9f1d62c5a42ebec059e170b93"
+    },
+    {
+      "filename": "synthesis__variables_1_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_1_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "fce97dffe62f64d054ba39715ea8012899a2cdfd8ec69341ea5c19c36181515d"
+    },
+    {
+      "filename": "synthesis__variables_11_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_11_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "3e7eb46ebe36d4655de641af3da5fd95ed735c349e30b63531752c331e234513"
+    },
+    {
+      "filename": "synthesis__variables_12_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_12_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "dbb5b10c65de78bb38d492d844a94ff6b6050daf010a9183da7ddfb37ed2c1c4"
+    },
+    {
+      "filename": "synthesis__variables_13_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_13_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        32
+      ],
+      "dtype": "float32",
+      "size_bytes": 245760,
+      "sha256": "19b8d9e8f357dc21067dcc19054638733362dbaf5e59c00e907bc6aefd932502"
+    },
+    {
+      "filename": "synthesis__variables_14_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_14_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        32
+      ],
+      "dtype": "float32",
+      "size_bytes": 245760,
+      "sha256": "c90eb29cfab58ee4ba0e88abce5671edbe5c5682482a193e7f5d0f43680cc192"
+    },
+    {
+      "filename": "synthesis__variables_16_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_16_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        1,
+        32
+      ],
+      "dtype": "float32",
+      "size_bytes": 1920,
+      "sha256": "4e7a50fbb8b7c060435ccaa9cfb88e287d50707d20f80577c3273e0222b8d889"
+    },
+    {
+      "filename": "synthesis__variables_17_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_17_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        1,
+        32
+      ],
+      "dtype": "float32",
+      "size_bytes": 1920,
+      "sha256": "ffa60c4b1c9e0ec9a4bd965c347ad3eeb330929d5cc7812622c7bf6c247dfe9d"
+    },
+    {
+      "filename": "synthesis__variables_2_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_2_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "2c7c887fe1927335c44e4b9e4cdedc8850a56f622deeb532b6d9b35bb16654d2"
+    },
+    {
+      "filename": "synthesis__variables_3_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_3_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        96
+      ],
+      "dtype": "float32",
+      "size_bytes": 737280,
+      "sha256": "31a9c32f8adbc7a0990bcf416fbb1e05f0d2cf5e342db5e30ba59d6d1ec29e4d"
+    },
+    {
+      "filename": "synthesis__variables_4_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_4_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        96
+      ],
+      "dtype": "float32",
+      "size_bytes": 737280,
+      "sha256": "9ffc924fa66f66c1b809cfff86e979ae9bdef298e3e7fa1d38d3392d7ba4ba6e"
+    },
+    {
+      "filename": "synthesis__variables_6_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_6_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "ce349b276f4aea51dce9b58a6695d3f81ba5542644e25cb7377d621a8136a1bf"
+    },
+    {
+      "filename": "synthesis__variables_7_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_7_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "5a6cc5426f398afdd96c5cd6e939a0ebdfd9bcbe111e2ff7e65cb2fccd42e47e"
+    },
+    {
+      "filename": "synthesis__variables_8_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_8_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        32
+      ],
+      "dtype": "float32",
+      "size_bytes": 245760,
+      "sha256": "43a04541343de34f6b52e6ee7cfd4690236c0d5a3c26378cda2b3b025d7c70d5"
+    },
+    {
+      "filename": "synthesis__variables_9_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/synthesis__variables_9_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        5,
+        3,
+        128,
+        32
+      ],
+      "dtype": "float32",
+      "size_bytes": 245760,
+      "sha256": "0590452e5ed8c0b8dac652b2fc48583e410ff2fe66af4b83522127564b9b53e3"
+    },
+    {
+      "filename": "modulating__layer_with_weights-0_bias_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/modulating__layer_with_weights-0_bias_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        192
+      ],
+      "dtype": "float32",
+      "size_bytes": 768,
+      "sha256": "28f79d4573407f35eda0470b191104a9e6de9ae4de414ea42c39f95476f58f2b"
+    },
+    {
+      "filename": "modulating__layer_with_weights-0_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/modulating__layer_with_weights-0_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        1,
+        192
+      ],
+      "dtype": "float32",
+      "size_bytes": 768,
+      "sha256": "bf61b7ce373eb9a2dd3ddaf4e97114e5430bf0e00c25eeaf5d6cb5c93903775a"
+    },
+    {
+      "filename": "modulating__layer_with_weights-1_bias_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/modulating__layer_with_weights-1_bias_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        3072
+      ],
+      "dtype": "float32",
+      "size_bytes": 12288,
+      "sha256": "997e77ba6a28a01034e458d4f2b0c538718eb734953cbbd004882c3088be77c5"
+    },
+    {
+      "filename": "modulating__layer_with_weights-1_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "path": "weights/pesos_ieec050_transposed/modulating__layer_with_weights-1_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin",
+      "shape": [
+        192,
+        3072
+      ],
+      "dtype": "float32",
+      "size_bytes": 2359296,
+      "sha256": "b75deac0e57c697ee3ee5a0390ef9e27302226c0added5853fb62b529d976876"
+    }
+  ]
+}

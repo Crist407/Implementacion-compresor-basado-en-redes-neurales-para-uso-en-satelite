@@ -1,0 +1,205 @@
+{
+  "model_dir": "models/SORTENY_Sentinel2_model",
+  "bit_length": 16,
+  "count": 18,
+  "weights": [
+    {
+      "filename": "spectral_analysis_kernel.bin",
+      "path": "weights/pesos_bin_minimal/spectral_analysis_kernel.bin",
+      "shape": [
+        8,
+        8
+      ],
+      "dtype": "float32",
+      "size_bytes": 256,
+      "sha256": "c76c54181c61b3f812ffc547dd7df547565c82fe17e8f2f504ae0f614f7f30c5"
+    },
+    {
+      "filename": "analysis_conv_0_kernel.bin",
+      "path": "weights/pesos_bin_minimal/analysis_conv_0_kernel.bin",
+      "shape": [
+        5,
+        5,
+        1,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 12800,
+      "sha256": "d35651e9302b98bc1d15acaf2d13b0341a403e0735a9df5701f3b07be4dab5dd"
+    },
+    {
+      "filename": "analysis_conv_0_bias.bin",
+      "path": "weights/pesos_bin_minimal/analysis_conv_0_bias.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "56f35fb499df4a05c7f395ab5e527e75532c3f620753b9e16a2dbe0c20987130"
+    },
+    {
+      "filename": "analysis_gdn_0_beta.bin",
+      "path": "weights/pesos_bin_minimal/analysis_gdn_0_beta.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "64f5ff827807372d292ca8b941448b701c77738b330d80e398d161a984a4f26b"
+    },
+    {
+      "filename": "analysis_gdn_0_gamma.bin",
+      "path": "weights/pesos_bin_minimal/analysis_gdn_0_gamma.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "ac8e58e5e71611382d9e564549686695e097b0f8694ab94dda40757d78159fa1"
+    },
+    {
+      "filename": "analysis_conv_1_kernel.bin",
+      "path": "weights/pesos_bin_minimal/analysis_conv_1_kernel.bin",
+      "shape": [
+        5,
+        5,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 1638400,
+      "sha256": "825154af738c5afdcacd567ab1024c8d5c27f7068fffd4d38d8c2fb5d86bd087"
+    },
+    {
+      "filename": "analysis_conv_1_bias.bin",
+      "path": "weights/pesos_bin_minimal/analysis_conv_1_bias.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "ab641f59e51db1e298c43f9b0807d2dba3e1ac2ac5a05230fa927e33608f90af"
+    },
+    {
+      "filename": "analysis_gdn_1_beta.bin",
+      "path": "weights/pesos_bin_minimal/analysis_gdn_1_beta.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "0e8d9ac24c2fe492fec4bb6a4ed1a2dd11e338403851f851eff5735ea535ab80"
+    },
+    {
+      "filename": "analysis_gdn_1_gamma.bin",
+      "path": "weights/pesos_bin_minimal/analysis_gdn_1_gamma.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "51b0768b1b83cfb6cdad4db0445e30c9c30a36933375c7323ca643d50e1f03ca"
+    },
+    {
+      "filename": "analysis_conv_2_kernel.bin",
+      "path": "weights/pesos_bin_minimal/analysis_conv_2_kernel.bin",
+      "shape": [
+        5,
+        5,
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 1638400,
+      "sha256": "3a137d559df1570dbcda4da4eb549bb9cf679080cdf1b6bd275e0de00ebcda3c"
+    },
+    {
+      "filename": "analysis_conv_2_bias.bin",
+      "path": "weights/pesos_bin_minimal/analysis_conv_2_bias.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "e5ca12b25bc7ecc8141f202bbd1f97c7147cc41a450d6d423e015e9841bbb2ae"
+    },
+    {
+      "filename": "analysis_gdn_2_beta.bin",
+      "path": "weights/pesos_bin_minimal/analysis_gdn_2_beta.bin",
+      "shape": [
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 512,
+      "sha256": "722457d4c096ccac65397ee6046be586bda60be52ea8c4ed4e42521fa816890e"
+    },
+    {
+      "filename": "analysis_gdn_2_gamma.bin",
+      "path": "weights/pesos_bin_minimal/analysis_gdn_2_gamma.bin",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float32",
+      "size_bytes": 65536,
+      "sha256": "a153529186db1e25d9c188ce0d19bad967b18e8d5bd5587fd66f4c7c7f361666"
+    },
+    {
+      "filename": "analysis_conv_3_kernel.bin",
+      "path": "weights/pesos_bin_minimal/analysis_conv_3_kernel.bin",
+      "shape": [
+        5,
+        5,
+        128,
+        384
+      ],
+      "dtype": "float32",
+      "size_bytes": 4915200,
+      "sha256": "c5707b1433223fc78a7ebb0a7fb8ca3680740fadb3404005f888f313b0c63a3f"
+    },
+    {
+      "filename": "mod_dense_0_kernel.bin",
+      "path": "weights/pesos_bin_minimal/mod_dense_0_kernel.bin",
+      "shape": [
+        1,
+        192
+      ],
+      "dtype": "float32",
+      "size_bytes": 768,
+      "sha256": "bf61b7ce373eb9a2dd3ddaf4e97114e5430bf0e00c25eeaf5d6cb5c93903775a"
+    },
+    {
+      "filename": "mod_dense_0_bias.bin",
+      "path": "weights/pesos_bin_minimal/mod_dense_0_bias.bin",
+      "shape": [
+        192
+      ],
+      "dtype": "float32",
+      "size_bytes": 768,
+      "sha256": "28f79d4573407f35eda0470b191104a9e6de9ae4de414ea42c39f95476f58f2b"
+    },
+    {
+      "filename": "mod_dense_1_kernel.bin",
+      "path": "weights/pesos_bin_minimal/mod_dense_1_kernel.bin",
+      "shape": [
+        192,
+        3072
+      ],
+      "dtype": "float32",
+      "size_bytes": 2359296,
+      "sha256": "b75deac0e57c697ee3ee5a0390ef9e27302226c0added5853fb62b529d976876"
+    },
+    {
+      "filename": "mod_dense_1_bias.bin",
+      "path": "weights/pesos_bin_minimal/mod_dense_1_bias.bin",
+      "shape": [
+        3072
+      ],
+      "dtype": "float32",
+      "size_bytes": 12288,
+      "sha256": "997e77ba6a28a01034e458d4f2b0c538718eb734953cbbd004882c3088be77c5"
+    }
+  ]
+}

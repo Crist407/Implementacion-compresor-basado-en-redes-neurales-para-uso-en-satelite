@@ -1,0 +1,152 @@
+// IO helpers: lectura/escritura de tensores e imagen RAW (BSQ)
+#include "io_helpers.h"
+#include <sys/stat.h>
+#include <errno.h>
+#include <string.h> // strerror
+
+/**
+* @brief Comprueba si la máquina es little-endian.
+* Crea un uint16_t con valor 1 y mira el primer byte.
+* Si el primer byte es 1, es little-endian.
+* @return 1 si es little-endian, 0 si es big-endian.
+*/
+static int is_machine_little_endian(void) {
+    uint16_t x = 1;
+    return *((uint8_t*)&x) == 1;
+}
+
+
+/**
+ * @brief Intercambia el orden de bytes de un uint16_t.
+*/
+static uint16_t bswap16(uint16_t v) {
+    return (uint16_t)((v >> 8) | (v << 8));
+}
+
+
+/**
+ * @brief Carga una imagen RAW (BSQ, uint16) y la convierte a float planar (B x H x W).
+ * Variante extendida con validaciones y opciones.
+ * @param filename Ruta al archivo .raw
+ * @param B Bandas
+ * @param H Altura
+ * @param W Anchura
+ * @param expect_little_endian 1: archivo little-endian; 0: big-endian; -1: no forzar comprobación (sin swap)
+ * @param scale_to_unit 1 para normalizar a [0,1] dividiendo por 65535, 0 deja valores originales
+ * @return Puntero (malloc) al tensor de floats o NULL si falla.
+ */
+float* load_image_bsq_u16_to_planar_f32_ex(const char* filename, int B, int H, int W,
+                                           int expect_little_endian, int scale_to_unit) {
+    if (B <= 0 || H <= 0 || W <= 0) {
+        fprintf(stderr, "Error [IO]: Dimensiones inválidas B,H,W.\n");
+        return NULL;
+    }
+
+    // Prevenir overflow en el cálculo de elementos
+    size_t sB = (size_t)B, sH = (size_t)H, sW = (size_t)W;
+    if (sB > SIZE_MAX / sH || (sB * sH) > SIZE_MAX / sW) {
+        fprintf(stderr, "Error [IO]: Overflow calculando total de elementos.\n");
+        return NULL;
+    }
+    size_t total_elements = sB * sH * sW;
+
+    // Validar tamaño de archivo = total_elements * 2 bytes
+    struct stat st;
+    if (stat(filename, &st) != 0) {
+        fprintf(stderr, "Error [IO]: stat() falló para %s: %s\n", filename, strerror(errno));
+        return NULL;
+    }
+    size_t expected_bytes = total_elements * sizeof(uint16_t);
+    if ((size_t)st.st_size != expected_bytes) {
+        fprintf(stderr, "Error [IO]: Tamaño inesperado. Esperado %zu bytes, real %lld bytes.\n",
+                expected_bytes, (long long)st.st_size);
+        return NULL;
+    }
+
+    FILE* f = fopen(filename, "rb");
+    if (!f) {
+        fprintf(stderr, "Error [IO]: No se pudo abrir la imagen de entrada: %s\n", filename);
+        return NULL;
+    }
+
+    uint16_t* bsq_buffer = (uint16_t*)malloc(expected_bytes);
+    if (!bsq_buffer) {
+        fprintf(stderr, "Error [IO]: Fallo de Malloc para bsq_buffer (%zu bytes)\n", expected_bytes);
+        fclose(f);
+        return NULL;
+    }
+
+    size_t read_count = fread(bsq_buffer, sizeof(uint16_t), total_elements, f);
+    fclose(f);
+    if (read_count != total_elements) {
+        fprintf(stderr, "Error [IO]: Lectura incompleta de la imagen: %s (%zu/%zu)\n",
+                filename, read_count, total_elements);
+        free(bsq_buffer);
+        return NULL;
+    }
+
+    // Endianness: decidir si swap
+    int do_swap = 0;
+    if (expect_little_endian == 0 || expect_little_endian == 1) {
+        int mach_le = is_machine_little_endian();
+        int file_le = expect_little_endian;
+        do_swap = (mach_le != file_le);
+    }
+
+    float scale = scale_to_unit ? (1.0f / 65535.0f) : 1.0f;
+    float* planar_tensor = (float*)malloc(total_elements * sizeof(float));
+    if (!planar_tensor) {
+        fprintf(stderr, "Error [IO]: Fallo de Malloc para planar_tensor\n");
+        free(bsq_buffer);
+        return NULL;
+    }
+
+    if (do_swap) {
+        for (size_t i = 0; i < total_elements; i++) {
+            uint16_t v = bswap16(bsq_buffer[i]);
+            planar_tensor[i] = (float)v * scale;
+        }
+    } else {
+        for (size_t i = 0; i < total_elements; i++) {
+            planar_tensor[i] = (float)bsq_buffer[i] * scale;
+        }
+    }
+
+    free(bsq_buffer);
+    return planar_tensor;
+}
+
+// La misma de antes pero esta es la versión simple sin opciones
+float* load_image_bsq_u16_to_planar_f32(const char* filename, int B, int H, int W) {
+    // Wrapper: sin forzar swap (-1) y sin normalizar (0)
+    return load_image_bsq_u16_to_planar_f32_ex(filename, B, H, W, -1, 0);
+}
+
+
+/**
+ * @brief Guarda un tensor planar (C x H x W) en un archivo .bin (float32).
+ * @param filename Ruta del archivo de salida.
+ * @param tensor Puntero a los datos.
+ * @param C Canales
+ * @param H Altura
+ * @param W Anchura
+ * @return 0 en éxito, -1 en error.
+ */
+int save_tensor_planar_f32(const char* filename, const float* tensor, int C, int H, int W) {
+    size_t total_elements = (size_t)C * H * W;
+    FILE* f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Error [IO]: No se pudo abrir el archivo de salida: %s\n", filename);
+        return -1;
+    }
+
+    size_t elements_written = fwrite(tensor, sizeof(float), total_elements, f);
+    fclose(f);
+
+    if (elements_written != total_elements) {
+        fprintf(stderr, "Error [IO]: Escritura incompleta en: %s\n", filename);
+        return -1;
+    }
+    
+    return 0;
+}
