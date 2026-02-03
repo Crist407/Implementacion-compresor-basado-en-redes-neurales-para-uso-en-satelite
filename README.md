@@ -40,7 +40,6 @@ Este proyecto implementa el encoder SORTENY (desarrollado por el IEEC) en C puro
 ├── weights/                    # Pesos exportados (float32 binarios)
 ├── data/                       # Imágenes de prueba (RAW BSQ u16)
 ├── docs/                       # Documentación e informes
-└── debug_dumps/                # Volcados de debug (ignorado en git)
 ```
 
 ## Requisitos
