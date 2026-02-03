@@ -202,4 +202,4 @@ Este proyecto es parte de un Trabajo de Fin de Grado. Consultar con el autor ant
 
 ## Contacto
 
-Christian Añez - 1635157@uab.cat
+Cristhian Omar Añez Lopez - 1635157@uab.cat
