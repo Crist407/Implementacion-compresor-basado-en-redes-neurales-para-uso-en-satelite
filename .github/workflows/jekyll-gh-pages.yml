@@ -1,8 +1,0 @@
-# Desactivar Jekyll - només servim HTML estàtic
-name: Disabled Jekyll
-on: workflow_dispatch
-jobs:
-  disabled:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Jekyll desactivat - usem static.yml"

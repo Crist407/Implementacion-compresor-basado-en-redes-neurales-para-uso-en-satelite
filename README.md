@@ -198,6 +198,7 @@ Este proyecto es parte de un Trabajo de Fin de Grado. Consultar con el autor ant
 
 - Institut d'Estudis Espacials de Catalunya (IEEC) - Modelo SORTENY original
 - Universitat Autònoma de Barcelona - Supervisión académica
+- En especial al Doctor Sebastià Mijares i Verdú por la posibilidad de realizar este proyecto
 
 ## Contacto
 
