@@ -4,126 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Llista de Canvis - Dossier TFG</title>
-    <style>
-        :root {
-            --primary: #2c3e50;
-            --secondary: #3498db;
-            --success: #27ae60;
-            --bg: #f8f9fa;
-            --text: #333;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
-            padding: 2rem;
-        }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background: white;
-            padding: 2rem 3rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        header {
-            text-align: center;
-            border-bottom: 3px solid var(--secondary);
-            padding-bottom: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        h1 {
-            color: var(--primary);
-            font-size: 1.8rem;
-            margin-bottom: 0.5rem;
-        }
-        .back-link {
-            display: inline-block;
-            margin-bottom: 1rem;
-            color: var(--secondary);
-            text-decoration: none;
-        }
-        .back-link:hover { text-decoration: underline; }
-        h2 {
-            color: var(--primary);
-            margin: 2rem 0 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid #eee;
-        }
-        h3 {
-            color: #555;
-            margin: 1.5rem 0 0.5rem;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 1rem 0;
-        }
-        th, td {
-            padding: 0.8rem;
-            text-align: left;
-            border: 1px solid #ddd;
-        }
-        th {
-            background: var(--primary);
-            color: white;
-        }
-        tr:nth-child(even) { background: #f9f9f9; }
-        .status {
-            display: inline-block;
-            padding: 0.2rem 0.6rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-        .status.approved {
-            background: #d4edda;
-            color: #155724;
-        }
-        .status.no-changes {
-            background: #cce5ff;
-            color: #004085;
-        }
-        .info-box {
-            background: #e8f4fc;
-            border-left: 4px solid var(--secondary);
-            padding: 1rem;
-            margin: 1.5rem 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .success-box {
-            background: #d4edda;
-            border-left: 4px solid var(--success);
-            padding: 1rem;
-            margin: 1.5rem 0;
-            border-radius: 0 4px 4px 0;
-        }
-        footer {
-            margin-top: 2rem;
-            padding-top: 1rem;
-            border-top: 1px solid #eee;
-            text-align: center;
-            color: #888;
-            font-size: 0.85rem;
-        }
-        ul { margin-left: 1.5rem; margin-top: 0.5rem; }
-        li { margin-bottom: 0.3rem; }
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <a href="index.html" class="back-link">← Tornar a l'índex</a>
         
         <header>
+            <span class="hero-badge">Dossier TFG</span>
             <h1>Llista de Canvis</h1>
-            <p>Registre de modificacions als documents lliurats durant el TFG</p>
+            <p class="subtitle">Registre de modificacions als documents lliurats durant el TFG</p>
         </header>
 
         <section>
             <h2>Resum General</h2>
             
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -160,6 +56,7 @@
                     </tr>
                 </tbody>
             </table>
+            </div>
         </section>
 
         <section>
@@ -168,6 +65,7 @@
             <strong>text modificat</strong> i <strong>justificació</strong>.</p>
 
             <h3>Entrega 1: Proposta Inicial (TFG_Entrega_1.pdf)</h3>
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -184,11 +82,13 @@
                     </tr>
                 </tbody>
             </table>
-            <div class="success-box">
+            </div>
+            <div class="callout success">
                 La proposta inicial (objectius, fases i metodologia) es va considerar adequada per al desenvolupament del TFG. No es van suggerir canvis.
             </div>
 
             <h3>Entrega 2: Revisió de Tecnologies (TFG_Entrega_2.pdf)</h3>
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -236,7 +136,8 @@
                     </tr>
                 </tbody>
             </table>
-            <div class="info-box">
+            </div>
+            <div class="callout info">
                 <strong>Feedback del Tutor (Novembre 2025):</strong><br><br>
                 <strong>1. Fórmula GDN:</strong><br>
                 <em>"Es valora molt positivament la feina realitzada. S'observa, però, que la fórmula
@@ -249,7 +150,7 @@
                 CCSDS 123. No obstant, una comparació més adequada seria amb el CCSDS 122: s'utilitza 
                 per compressió amb pèrdua, i funciona amb una transformada (com el SORTENY)."</em>
             </div>
-            <div class="success-box">
+            <div class="callout success">
                 <strong>Resolució:</strong><br>
                 <strong>1.</strong> La fórmula GDN es va corregir a la implementació en C
                 (<code>sorteny_layers.c</code>).<br>
@@ -258,6 +159,7 @@
             </div>
 
             <h3>Entrega 3: Informe de Progrés II (TFG_Entrega_3.pdf)</h3>
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -274,12 +176,14 @@
                     </tr>
                 </tbody>
             </table>
-            <div class="success-box">
+            </div>
+            <div class="callout success">
                 <strong>Comentari del Tutor (Desembre 2025):</strong> Es va aprovar l'ajustament estratègic de prioritzar 
                 la qualitat de la inferència sobre la integració del codificador Montsec.
             </div>
 
             <h3>Memòria Final (Entrega Final.pdf)</h3>
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -296,7 +200,8 @@
                     </tr>
                 </tbody>
             </table>
-            <div class="success-box">
+            </div>
+            <div class="callout success">
                 <strong>Comentari del Tutor (Gener 2026):</strong> El document final es va considerar complet i correcte per a la presentació i defensa.
                 Ens aconsella, de cara al treball final, publicar el codi desenvolupat (un GitHub, per exemple) i que inclogui el fet de publicar-lo en el treball.
             </div>
@@ -307,6 +212,7 @@
             <p>Durant el desenvolupament del TFG s'ha realitzat un ajustament significatiu
             respecte a la planificació original presentada a l'Entrega 1.</p>
 
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -331,9 +237,10 @@
                     </tr>
                 </tbody>
             </table>
+            </div>
 
             <h3>Justificació de l'Ajustament</h3>
-            <div class="info-box">
+            <div class="callout info">
                 <ol>
                     <li><strong>Complexitat Tècnica i Priorització:</strong> Durant la Fase 3 es va detectar 
                     un <em>bug</em> crític en la quantització del paràmetre λ que degradava severament 
@@ -351,7 +258,7 @@
                 </ol>
             </div>
 
-            <div class="success-box">
+            <div class="callout success">
                 <strong>Aprovació del Tutor:</strong> Aquest canvi de planificació va ser discutit 
                 i aprovat pel tutor durant la reunió de Desembre 2025. Es va considerar una decisió 
                 tècnicament justificada que no afecta els objectius fonamentals del TFG.
