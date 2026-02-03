@@ -1,4 +1,3 @@
-# Workflow per desplegar contingut estàtic a GitHub Pages
 name: Deploy static content to Pages
 
 on:
