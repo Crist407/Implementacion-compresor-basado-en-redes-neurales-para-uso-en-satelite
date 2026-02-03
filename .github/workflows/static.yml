@@ -23,12 +23,55 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        
+      - name: Preparar contingut per Pages
+        run: |
+          mkdir -p _site
+          # Copiar fitxers HTML principals
+          cp -r *.html _site/ 2>/dev/null || true
+          cp -r *.css _site/ 2>/dev/null || true
+          cp -r .nojekyll _site/ 2>/dev/null || true
+          
+          # Copiar documentació
+          cp -r docs _site/ 2>/dev/null || true
+          
+          # Copiar codi font HTML (syntax highlighted)
+          mkdir -p _site/src/c/html
+          cp -r src/c/html/*.html _site/src/c/html/ 2>/dev/null || true
+          
+          # Copiar scripts (sense binaris)
+          mkdir -p _site/scripts
+          cp scripts/*.py _site/scripts/ 2>/dev/null || true
+          cp scripts/*.sh _site/scripts/ 2>/dev/null || true
+          
+          # Copiar README i fitxers de text
+          cp README.md _site/ 2>/dev/null || true
+          cp Makefile _site/ 2>/dev/null || true
+          cp requirements.txt _site/ 2>/dev/null || true
+          cp license.txt _site/ 2>/dev/null || true
+          
+          # Copiar codi Python (sense pycache)
+          mkdir -p _site/src/python
+          cp -r src/python/*.py _site/src/python/ 2>/dev/null || true
+          
+          # Copiar codi C (només fonts, sense binaris)
+          mkdir -p _site/src/c
+          cp src/c/*.c _site/src/c/ 2>/dev/null || true
+          cp src/c/*.h _site/src/c/ 2>/dev/null || true
+          
+          # Mostrar què s'ha copiat
+          echo "=== Contingut de _site ==="
+          find _site -type f | head -50
+          du -sh _site
+          
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: './_site'
+          
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
