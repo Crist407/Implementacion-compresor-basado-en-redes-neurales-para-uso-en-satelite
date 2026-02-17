@@ -104,6 +104,7 @@
             {\large \faArrowRight} \textbf{Cal comprimir les dades a bord!}
         \end{column}
         \begin{column}{0.4\textwidth}
+            \vspace{4em}
             \begin{block}{El Desafiament}
                 \centering
                 \vspace{0.5em}
@@ -111,7 +112,7 @@
                 \vspace{0.5em}
             \end{block}
             \vspace{1em}
-            \includegraphics[width=\textwidth]{img/SORTENY_DIAGRAM.png}
+            %\includegraphics[width=\textwidth]{img/SORTENY_DIAGRAM.png}
         \end{column}
     \end{columns}
 \end{frame}
@@ -377,7 +378,7 @@
             \begin{exampleblock}{Resultat}
                 \centering
                 Reducció de memòria:\\
-                \textbf{796 MB → 87 MB}\\
+                \textbf{800 MB → 87 MB}\\
                 (\textbf{9.2x} menys)
             \end{exampleblock}
         \end{column}
@@ -476,66 +477,49 @@
 \begin{frame}{Resultats: Rendiment i Memòria}
     \begin{columns}[T]
         \begin{column}{0.55\textwidth}
-            \begin{table}
-                \footnotesize
-                \caption{Desglossament de Rendiment}
-                \begin{tabular}{lrrr}
-                    \toprule
-                    \textbf{Mètrica} & \textbf{C} & \textbf{Python} & \textbf{Millora} \\
-                    \midrule
-                    Temps Total & \textbf{308 s} & 451 s & \textcolor{successGreen}{+47\%} \\
-                    RAM Màxima & \textbf{87 MB} & 796 MB & \textcolor{successGreen}{9.2x} \\
-                    Ús CPU & 338\% & 27\% & \textcolor{successGreen}{Eficiència} \\
-                    \bottomrule
-                \end{tabular}
-            \end{table}
-            
-            \vspace{0.5em}
+            \begin{center}
+                \includegraphics[width=\textwidth, height=0.7\textheight]{img/fig5_rendimiento.png}
+            \end{center}
+        \end{column}
+        \begin{column}{0.42\textwidth}
             \textbf{Anàlisi:}
             \begin{itemize}
                 \item \textbf{C:} Satura els 4 nuclis (338\% CPU)
                 \item \textbf{Python:} 75\% del temps en swap/IO
                 \item La memòria era el \alert{coll d'ampolla real}
             \end{itemize}
-        \end{column}
-        \begin{column}{0.47\textwidth}
-            \begin{center}
-                \includegraphics[width=\textwidth, height=0.6\textheight]{img/fig5_rendimiento.png}
-            \end{center}
+
+            \vspace{1em}
+            \begin{exampleblock}{Xifres Clau}
+                \textbf{Speedup:} 1.47x\\  
+                \textbf{RAM:} 796 → 87 MB (9.2x)\\  
+                \textbf{CPU:} 338\% vs 27\%
+            \end{exampleblock}
         \end{column}
     \end{columns}
 \end{frame}
 
 \begin{frame}{Resultats: Qualitat de Reconstrucció}
     \begin{columns}[T]
-        \begin{column}{0.48\textwidth}
-            \begin{table}
-                \footnotesize
-                \caption{PSNR per Banda Espectral}
-                \begin{tabular}{lrr}
-                    \toprule
-                    \textbf{Banda} & \textbf{C} & \textbf{Python} \\
-                    \midrule
-                    B1 (Blue) & 78.82 dB & 78.83 dB \\
-                    B3 (Red) & 76.50 dB & 76.53 dB \\
-                    B7 (NIR) & 76.57 dB & 76.58 dB \\
-                    \midrule
-                    \textbf{Global} & \textbf{76.73 dB} & \textbf{76.73 dB} \\
-                    \bottomrule
-                \end{tabular}
-            \end{table}
-            
-            \vspace{0.5em}
-            \begin{exampleblock}{Conclusió}
-                \textbf{Qualitat idèntica} \\
-                Diferències $<$ 0.03 dB \\
-                (irrellevants a la pràctica)
-            \end{exampleblock}
-        \end{column}
-        \begin{column}{0.48\textwidth}
+        \begin{column}{0.55\textwidth}
             \begin{center}
-                \includegraphics[width=\textwidth, height=0.6\textheight]{img/fig4_metricas_calidad.png}
+                \includegraphics[width=\textwidth, height=0.7\textheight]{img/fig4_metricas_calidad.png}
             \end{center}
+        \end{column}
+        \begin{column}{0.42\textwidth}
+            \textbf{Anàlisi:}
+            \begin{itemize}
+                \item Les dues línies (C i Python) se superposen perfectament
+                \item Variació natural per contingut espectral
+                \item Diferències $<$ 0.03 dB
+            \end{itemize}
+
+            \vspace{1em}
+            \begin{exampleblock}{Conclusió}
+                \textbf{PSNR Global: 76.73 dB}\\  
+                Qualitat \textbf{idèntica}\\  
+                entre C i Python
+            \end{exampleblock}
         \end{column}
     \end{columns}
 \end{frame}

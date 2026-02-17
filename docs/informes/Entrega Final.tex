@@ -8,10 +8,10 @@
 \usepackage{titlesec}
 \usepackage{multirow}
 \usepackage{lettrine}
-\usepackage{booktabs} 
-\usepackage{float}    
-\usepackage{hyperref} 
-\usepackage{enumitem} 
+\usepackage{booktabs} % Afegit per taules professionals
+\usepackage{float}    % Afegit per posicionament
+\usepackage{hyperref} % Afegit per enllaços
+\usepackage{enumitem} % Afegit per personalitzar enumeracions
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{xcolor}
@@ -33,7 +33,7 @@
 }
 
 \setcounter{secnumdepth}{4}  % permet numerar fins a \paragraph
-\setcounter{tocdepth}{4}    
+\setcounter{tocdepth}{4}     % opcional: mostrar-ho també al TOC
 
 %
 %\large\bfseries\sffamily
@@ -123,7 +123,7 @@ La generació massiva de dades en l'observació terrestre requereix sistemes de 
 
 \lettrine[lines=2]{L}{a} darrera dècada ha estat marcada per un creixement exponencial en la generació de dades d'observació de la Terra. Missions com Sentinel-2, EnMAP o PRISMA capturen imatges multiespectrals i hiperespectrals d'alta resolució que permeten monitoritzar ecosistemes, agricultura, qualitat de l'aigua o fenòmens climàtics \cite{bioucas2013,enmap2015}. Aquestes dades, tot i el seu enorme valor científic, presenten un repte fonamental: \textbf{el volum és massa gran per ser transmès íntegrament a terra}.
 
-En satèl·lits de baix cost i CubeSats, les limitacions són encara més severes, com la amplada de banda reduïda dels enllaços de descàrrega, la memòria i potència de càlcul molt limitades, i la necessitat de processament a bord per reduir el volum de dades abans de la transmissió \cite{cubesat101,selva2012}.
+En satèl·lits de baix cost i CubeSats, les limitacions són encara més severes, com l'amplada de banda reduïda dels enllaços de descàrrega, la memòria i potència de càlcul molt limitades, i la necessitat de processament a bord per reduir el volum de dades abans de la transmissió \cite{cubesat101,selva2012}.
 
 Per aquest motiu, la compressió d’imatges a bord és un component essencial en qualsevol missió moderna. Els estàndards del \textit{Consultative Committee for Space Data Systems} (CCSDS), com CCSDS–121, CCSDS–122 i CCSDS–123, han estat durant anys la solució predominant \cite{ccsds123_spec}. Aquests mètodes utilitzen transformades matemàtiques fixes (predictors, DWT, codificadors Rice) i estan dissenyats per ser implementats en maquinari dedicat (FPGAs) amb una complexitat computacional molt baixa.
 
@@ -259,13 +259,13 @@ El procés s'aplica de manera separable (vegeu Fig. \ref{fig:dwt_process}, a): p
     \label{fig:dwt_process}
 \end{figure}
 
-Per maximitzar la compressió, l'estàndard CCSDS aplica aquesta transformada recursivament tres vegades sobre la banda LL (Fig. \ref{fig:dwt_process}, b). El resultat és una estructura piramidal de 10 sub-bandes on l'energia està altament compactada en la sub-banda $LL_3$ (el ``tope" de la piràmide), mentre que les bandes d'alta freqüència ($HH_1$, etc.) contenen valors propers a zero (escassos), ideals per a ser comprimits.
+Per maximitzar la compressió, l'estàndard CCSDS aplica aquesta transformada recursivament tres vegades sobre la banda LL (Fig. \ref{fig:dwt_process}, b). El resultat és una estructura piramidal de 10 sub-bandes on l'energia està altament compactada en la sub-banda $LL_3$ (el ``tope'' de la piràmide), mentre que les bandes d'alta freqüència ($HH_1$, etc.) contenen valors propers a zero (escassos), ideals per a ser comprimits.
 
 \paragraph{Etapa 2: Codificador de Plans de Bits (BPE)}
 
 \hfill
 
-A diferència de la compressió Huffman tradicional, el CCSDS 122 utilitza un codificador que explota l'estructura de les ondetes. Els coeficients s'agrupen en estructures d'arbre anomenades ``famílies" (Fig. \ref{fig:ccsds_family}).
+A diferència de la compressió Huffman tradicional, el CCSDS 122 utilitza un codificador que explota l'estructura de les ondetes. Els coeficients s'agrupen en estructures d'arbre anomenades ``famílies'' (Fig. \ref{fig:ccsds_family}).
 
 \begin{figure}[h]
     \centering
@@ -301,7 +301,7 @@ SORTENY aplica una capa densa (multiplicació matricial) que projecta aquest vec
 \begin{equation}
     x' = f(x) = A \cdot x + b
 \end{equation}
-On $A$ és una matriu de pesos apresa durant l'entrenament. Aquesta operació realitza una reducció de dimensionalitat anàloga a l'Anàlisi de Componentes Principals (PCA) o la Transformada de Karhunen-Loève (KLT), però amb l'avantatge que la matriu de projecció s'optimitza conjuntament amb la resta de la xarxa no lineal per maximitzar la qualitat final de la imatge reconstruïda.
+On $A$ és una matriu de pesos apresa durant l'entrenament. Aquesta operació realitza una reducció de dimensionalitat anàloga a l'Anàlisi de Components Principals (PCA) o la Transformada de Karhunen-Loève (KLT), però amb l'avantatge que la matriu de projecció s'optimitza conjuntament amb la resta de la xarxa no lineal per maximitzar la qualitat final de la imatge reconstruïda.
 
 
 
@@ -313,7 +313,7 @@ Un cop descorrelacionades les bandes, l'arquitectura aplica compressió espacial
     \begin{equation}
         y_i = \frac{x_i}{\sqrt{\beta_i + \sum_j \gamma_{ij} x_j^2}}
     \end{equation}
-    On $\beta_i$ i $\gamma_{ij}$ són paràmetres apressos. Aquesta operació ``gaussianitza'' les dades, fent que els coeficients resultants siguin estadísticament més independents i, per tant, més fàcils de comprimir per un codificador entròpic posterior.
+    On $\beta_i$ i $\gamma_{ij}$ són paràmetres apresos. Aquesta operació ``gaussianitza'' les dades, fent que els coeficients resultants siguin estadísticament més independents i, per tant, més fàcils de comprimir per un codificador entròpic posterior.
 \end{itemize}
 
 \subsubsection{Etapa 3: Modulació de Qualitat (C)}
@@ -322,7 +322,7 @@ Aquesta xarxa rep un únic valor escalar, $\lambda$ (el paràmetre de qualitat),
 \begin{equation}
     \hat{Y} = \text{round}(Y \cdot M(\lambda))
 \end{equation}
-Un valor alt de $\lambda$ genera factors d'escala grans, la qual cosa preserva més informació després de l'arrodoniment (major qualitat, més bits). Un valor baix redueix l'escala, fent que més valors s'arrodonieixin a zero (major compressió). Això permet variar la taxa de bits sense necessitat de reentrenar el model ni emmagatzemar múltiples pesos.
+Un valor alt de $\lambda$ genera factors d'escala grans, la qual cosa preserva més informació després de l'arrodoniment (major qualitat, més bits). Un valor baix redueix l'escala, fent que més valors s'arrodoneixin a zero (major compressió). Això permet variar la taxa de bits sense necessitat de reentrenar el model ni emmagatzemar múltiples pesos.
 
 
 \subsection{Comparativa de Filosofies: Fix vs. Après}
@@ -660,8 +660,8 @@ Aquest projecte obre diverses línies de continuïtat per apropar la solució a 
 % -----------------------------------------------------------------------
 % AGRAÏMENTS I DECLARACIÓ IA
 % -----------------------------------------------------------------------
-\section*{Agraïments}
-``PENDENT DE FER''
+%\section*{Agraïments}
+%``PENDENT DE FER''
 
 \section*{Declaració d'ús d'IA Generativa}
 
@@ -684,7 +684,7 @@ També en el desenvolupament del programari però s'ha restringit a la consulta 
     \item \textbf{Grau:} Només d'assistència auxiliar. La lògica i metodologia principal, l'algorisme de gestió de memòria (``Ping-Pong'') i l'arquitectura del motor d'inferència han estat dissenyats i implementats manualment.
 \end{itemize}
 
-Aquest ús d'eines d'IA generativa s'ha realitzat amb plena consciència de les implicacions ètiques i acadèmiques, assegurant la transparència i la integritat en tot moment. S'ha assumeix la responsabilitat total del contingut i la qualitat del treball.
+Aquest ús d'eines d'IA generativa s'ha realitzat amb plena consciència de les implicacions ètiques i acadèmiques, assegurant la transparència i la integritat en tot moment. S'assumeix la responsabilitat total del contingut i la qualitat del treball.
 
 \begin{thebibliography}{11}
 % 1. Introducció i Context del Treball
@@ -829,7 +829,7 @@ S. M. Guertin, ``Raspberry Pis for Space Guidelines,'' NASA Jet Propulsion Labor
 \begin{figure*}[ht]
     \centering
     \includegraphics[width=1\textwidth]{img/fig6_histograma_latentes.png}
-    \caption{Anàlisi de paritat. L'histograma de diferències (esquerra) mostra que la immensa majoria de valors són idèntics (diferència 0), amb variacions residuals de $\pm 1$ degudes al arrodoniment.}
+    \caption{Anàlisi de paritat. L'histograma de diferències (esquerra) mostra que la immensa majoria de valors són idèntics (diferència 0), amb variacions residuals de $\pm 1$ degudes a l'arrodoniment.}
     \label{fig:latentes}
 \end{figure*}
 
