@@ -313,7 +313,7 @@
                         
                         % C box
                         \node[draw, fill=successGreen!20, minimum width=3cm, minimum height=1.2cm, rounded corners] at (0,-0.5) {\textbf{C11 Natiu}};
-                        \node at (0,-1.0) {\footnotesize 87 MB RAM};
+                        \node at (0,-1.0) {\footnotesize ?? MB RAM};
                     \end{tikzpicture}
                 \end{center}
             \end{block}
@@ -354,7 +354,8 @@
         \end{column}
         \begin{column}{0.42\textwidth}
             \begin{center}
-                \begin{tikzpicture}[scale=0.7]
+                \vspace{3em}
+                \begin{tikzpicture}[scale=1.0]
                     % Buffers
                     \node[draw, fill=techCyan!30, minimum width=2.5cm, minimum height=0.8cm] (A) at (0,3) {Buffer A};
                     \node[draw, fill=starLight!50, minimum width=2.5cm, minimum height=0.8cm] (B) at (0,1.5) {Buffer B};
@@ -374,13 +375,13 @@
                 \end{tikzpicture}
             \end{center}
             
-            \vspace{0.5em}
-            \begin{exampleblock}{Resultat}
-                \centering
-                Reducció de memòria:\\
-                \textbf{800 MB → 87 MB}\\
-                (\textbf{9.2x} menys)
-            \end{exampleblock}
+            %\vspace{0.5em}
+            %\begin{exampleblock}{Resultat}
+            %    \centering
+            %    Reducció de memòria:\\
+            %    \textbf{800 MB → 87 MB}\\
+            %    (\textbf{9.2x} menys)
+            %\end{exampleblock}
         \end{column}
     \end{columns}
 \end{frame}
@@ -388,38 +389,24 @@
 \begin{frame}{Optimització: Paral·lelisme i Vectorització}
     \begin{columns}[T]
         \begin{column}{0.48\textwidth}
-            \textbf{\faLayerGroup\ Paral·lelisme de Fils (OpenMP)}
-            \begin{itemize}
-                \item Independència en canals de sortida
-                \item Distribució en 4 nuclis Cortex-A53
-                \item Directiva: \texttt{\#pragma omp parallel for}
-            \end{itemize}
-            
-            \vspace{1em}
-            \textbf{\faMicrochip\ Vectorització SIMD (NEON)}
-            \begin{itemize}
-                \item Unitats vectorials de 128 bits
-                \item Processar múltiples píxels per cicle
-                \item Flags: \texttt{-mcpu=cortex-a53 -mfpu=neon}
-            \end{itemize}
+            \begin{block}{\faLayerGroup\ Paral·lelisme de Fils (OpenMP)}
+                \begin{itemize}
+                    \item Independència en canals de sortida
+                    \item Distribució en 4 nuclis Cortex-A53
+                    \item Directiva: \texttt{\#pragma omp parallel for}
+                    %\item Ús CPU: \textbf{338\%} (satura els 4 nuclis)
+                \end{itemize}
+            \end{block}
         \end{column}
         \begin{column}{0.48\textwidth}
-            \textbf{Validació de Paritat Numèrica}
-            
-            \vspace{0.5em}
-            Errors crítics detectats i corregits:
-            \begin{enumerate}
-                \item \textcolor{alertRed}{\faBug} Normalització d'entrada (÷65535)
-                \item \textcolor{alertRed}{\faBug} Fórmula GDN incorrecta
-                \item \textcolor{alertRed}{\faBug} Escalat de $\lambda$
-            \end{enumerate}
-            
-            \vspace{0.5em}
-            \begin{exampleblock}{Resultat Final}
-                \textbf{99.98\%} dels latents\\
-                són \textbf{bit a bit idèntics}\\
-                entre C i Python
-            \end{exampleblock}
+            \begin{block}{\faMicrochip\ Vectorització SIMD (NEON)}
+                \begin{itemize}
+                    %\item Unitats vectorials de 128 bits
+                    \item Processar múltiples píxels per cicle
+                    \item Flags: \texttt{-mcpu=cortex-a53 -mfpu=neon}
+                    \item Compilació: \texttt{-O3 -funsafe-math}
+                \end{itemize}
+            \end{block}
         \end{column}
     \end{columns}
 \end{frame}
@@ -631,7 +618,7 @@
                 \begin{itemize}
                     \item La \textbf{memòria} és la barrera principal, no la CPU
                     \item És possible portar DL a sistemes embarcats \textbf{amb enginyeria adequada}
-                    \item Les transformades apreses ofereixen \textbf{flexibilitat} vs fixes
+                    %\item Les transformades apreses ofereixen \textbf{flexibilitat} vs fixes
                 \end{itemize}
             \end{block}
             
