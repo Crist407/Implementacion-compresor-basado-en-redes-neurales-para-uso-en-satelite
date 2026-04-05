@@ -108,6 +108,7 @@ int main(int argc, char* argv[]) {
     float* scratch_b = NULL; // tamaño máximo: C0 x H1 x W1
     float* band_normalized = NULL; // Buffer para normalización Lambda x/65535
     float* band_Y = NULL;
+    int32_t* band_q_i32 = NULL;
     float* mod_hidden = NULL;
     float* modulator  = NULL;
     // Buffers opcionales para volcados de etapas (conv0_pre/gdn0)
@@ -115,7 +116,6 @@ int main(int argc, char* argv[]) {
     float* gdn0_all = NULL;
     float* gdn1_all = NULL;
     float* gdn2_all = NULL;
-    int32_t* band_q_i32 = NULL;
     FILE* f_out = NULL;
 
     // Modo de paridad estricta: fuerza half-to-even y ejecución determinista
@@ -208,7 +208,7 @@ int main(int argc, char* argv[]) {
     // Preparar salida en streaming
     f_out = fopen(output_file, "wb");
     if (!f_out) { fprintf(stderr, "Error: no se pudo abrir '%s' para escritura.\n", output_file); goto cleanup; }
-    // Buffer de salida grande para reducir llamadas al sistema.
+    // Buffer de salida grande para reducir llamadas al sistema en escrituras largas.
     setvbuf(f_out, NULL, _IOFBF, 1 << 20);
 
     // Cabecera estilo Python: 5 x uint16 (bands, height, width, datatype, num_filters)
@@ -337,9 +337,10 @@ int main(int argc, char* argv[]) {
                 }
                 band_q_i32[plane_off + p] = (int32_t)lrintf(qv_f);
             }
+
         }
 
-        // Escribir toda la banda cuantizada en un solo bloque
+        // Escribir toda la banda cuantizada en un solo bloque (orden band, channel, h, w).
         if (fwrite(band_q_i32, sizeof(int32_t), band_latent_elems, f_out) != band_latent_elems) {
             fprintf(stderr, "Error: escritura incompleta en salida (banda %d)\n", b);
             fclose(f_out); f_out=NULL; goto cleanup;

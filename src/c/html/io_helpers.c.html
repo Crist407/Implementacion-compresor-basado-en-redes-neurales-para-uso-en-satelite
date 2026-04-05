@@ -21,22 +21,28 @@
 #include "io_helpers.h"
 #include &lt;sys/stat.h&gt;
 #include &lt;errno.h&gt;
-#include &lt;string.h&gt;
+#include &lt;string.h&gt; // strerror
+#include &lt;math.h&gt;
 
 /**
- * @brief Comprueba si la máquina es little-endian.
- */
+* @brief Comprueba si la máquina es little-endian.
+* Crea un uint16_t con valor 1 y mira el primer byte.
+* Si el primer byte es 1, es little-endian.
+* @return 1 si es little-endian, 0 si es big-endian.
+*/
 static int is_machine_little_endian(void) {
     uint16_t x = 1;
     return *((uint8_t*)&amp;x) == 1;
 }
 
+
 /**
  * @brief Intercambia el orden de bytes de un uint16_t.
- */
+*/
 static uint16_t bswap16(uint16_t v) {
     return (uint16_t)((v &gt;&gt; 8) | (v &lt;&lt; 8));
 }
+
 
 /**
  * @brief Carga una imagen RAW (BSQ, uint16) y la convierte a float planar (B x H x W).
@@ -45,7 +51,7 @@ static uint16_t bswap16(uint16_t v) {
  * @param B Bandas
  * @param H Altura
  * @param W Anchura
- * @param expect_little_endian 1: archivo little-endian; 0: big-endian; -1: no forzar
+ * @param expect_little_endian 1: archivo little-endian; 0: big-endian; -1: no forzar comprobación (sin swap)
  * @param scale_to_unit 1 para normalizar a [0,1] dividiendo por 65535, 0 deja valores originales
  * @return Puntero (malloc) al tensor de floats o NULL si falla.
  */
@@ -56,7 +62,7 @@ float* load_image_bsq_u16_to_planar_f32_ex(const char* filename, int B, int H, i
         return NULL;
     }
 
-    // Prevenir overflow
+    // Prevenir overflow en el cálculo de elementos
     size_t sB = (size_t)B, sH = (size_t)H, sW = (size_t)W;
     if (sB &gt; SIZE_MAX / sH || (sB * sH) &gt; SIZE_MAX / sW) {
         fprintf(stderr, "Error [IO]: Overflow calculando total de elementos.\n");
@@ -64,7 +70,7 @@ float* load_image_bsq_u16_to_planar_f32_ex(const char* filename, int B, int H, i
     }
     size_t total_elements = sB * sH * sW;
 
-    // Validar tamaño de archivo
+    // Validar tamaño de archivo = total_elements * 2 bytes
     struct stat st;
     if (stat(filename, &amp;st) != 0) {
         fprintf(stderr, "Error [IO]: stat() falló para %s: %s\n", filename, strerror(errno));
@@ -130,13 +136,21 @@ float* load_image_bsq_u16_to_planar_f32_ex(const char* filename, int B, int H, i
     return planar_tensor;
 }
 
-// Versión simple sin opciones
+// La misma de antes pero esta es la versión simple sin opciones
 float* load_image_bsq_u16_to_planar_f32(const char* filename, int B, int H, int W) {
+    // Wrapper: sin forzar swap (-1) y sin normalizar (0)
     return load_image_bsq_u16_to_planar_f32_ex(filename, B, H, W, -1, 0);
 }
 
+
 /**
  * @brief Guarda un tensor planar (C x H x W) en un archivo .bin (float32).
+ * @param filename Ruta del archivo de salida.
+ * @param tensor Puntero a los datos.
+ * @param C Canales
+ * @param H Altura
+ * @param W Anchura
+ * @return 0 en éxito, -1 en error.
  */
 int save_tensor_planar_f32(const char* filename, const float* tensor, int C, int H, int W) {
     size_t total_elements = (size_t)C * H * W;
@@ -155,7 +169,64 @@ int save_tensor_planar_f32(const char* filename, const float* tensor, int C, int
     }
     
     return 0;
-}</code></pre>
+}
+
+static float round_half_even_local(float x) {
+    float n = floorf(x);
+    float diff = x - n;
+    if (diff &gt; 0.5f) return n + 1.0f;
+    if (diff &lt; 0.5f) return n;
+    long long ni = (long long)n;
+    return ((ni &amp; 1LL) == 0LL) ? n : (n + 1.0f);
+}
+
+int save_image_bsq_u16_from_planar_f32(const char* filename, const float* tensor, int B, int H, int W, int use_half_even) {
+    if (!filename || !tensor || B &lt;= 0 || H &lt;= 0 || W &lt;= 0) {
+        fprintf(stderr, "Error [IO]: argumentos inválidos en save_image_bsq_u16_from_planar_f32\n");
+        return -1;
+    }
+
+    size_t total_elements = (size_t)B * H * W;
+    uint16_t* out = (uint16_t*)malloc(total_elements * sizeof(uint16_t));
+    if (!out) {
+        fprintf(stderr, "Error [IO]: malloc falló en save_image_bsq_u16_from_planar_f32\n");
+        return -1;
+    }
+
+    if (use_half_even) {
+        for (size_t i = 0; i &lt; total_elements; ++i) {
+            float r = round_half_even_local(tensor[i]);
+            if (r &lt; 0.0f) r = 0.0f;
+            if (r &gt; 65535.0f) r = 65535.0f;
+            out[i] = (uint16_t)lrintf(r);
+        }
+    } else {
+        for (size_t i = 0; i &lt; total_elements; ++i) {
+            float r = roundf(tensor[i]);
+            if (r &lt; 0.0f) r = 0.0f;
+            if (r &gt; 65535.0f) r = 65535.0f;
+            out[i] = (uint16_t)lrintf(r);
+        }
+    }
+
+    FILE* f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Error [IO]: No se pudo abrir archivo de salida RAW: %s\n", filename);
+        free(out);
+        return -1;
+    }
+
+    size_t written = fwrite(out, sizeof(uint16_t), total_elements, f);
+    fclose(f);
+    free(out);
+
+    if (written != total_elements) {
+        fprintf(stderr, "Error [IO]: Escritura incompleta RAW: %s\n", filename);
+        return -1;
+    }
+    return 0;
+}
+</code></pre>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>

@@ -367,33 +367,14 @@ SORTENY_Model* load_model_weights(const char* base_path) {
             model->analysis_an.conv_3.stride = 2;
         }
 
-        // 3. Modulating Transform
-        else if (strcmp(filename, "mod_dense_1_kernel.bin") == 0 ||
-                 strcmp(filename, "modulating__layer_with_weights-0_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
-            model->modulating_mod.dense_0.kernel = data_ptr;
+        // 3. Synthesis Transform (decoder)
+        else if (strcmp(filename, "spectral_synthesis_kernel.bin") == 0) {
+            model->spectral_syn.dense.kernel = data_ptr;
             size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 2) {
-                // TSV Shape is [Cin, Cout]
-                model->modulating_mod.dense_0.C_in = dims[0];
-                model->modulating_mod.dense_0.C_out = dims[1];
+                model->spectral_syn.dense.C_in = dims[0];
+                model->spectral_syn.dense.C_out = dims[1];
             }
-        } else if (strcmp(filename, "mod_dense_1_bias.bin") == 0 ||
-                   strcmp(filename, "modulating__layer_with_weights-0_bias_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) { 
-             model->modulating_mod.dense_0.bias = data_ptr;
         }
-        else if (strcmp(filename, "mod_dense_2_kernel.bin") == 0 ||
-                 strcmp(filename, "modulating__layer_with_weights-1_kernel_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
-            model->modulating_mod.dense_1.kernel = data_ptr;
-            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 2) {
-                // TSV Shape is [Cin, Cout]
-                model->modulating_mod.dense_1.C_in = dims[0];
-                model->modulating_mod.dense_1.C_out = dims[1];
-            }
-        } else if (strcmp(filename, "mod_dense_2_bias.bin") == 0 ||
-                   strcmp(filename, "modulating__layer_with_weights-1_bias_.ATTRIBUTES_VARIABLE_VALUE.bin") == 0) {
-            model->modulating_mod.dense_1.bias = data_ptr;
-        }
-
-        // 4. Synthesis Transform
         else if (strcmp(filename, "synthesis_conv_0_kernel.bin") == 0) {
             model->synthesis_syn.conv_0.kernel = data_ptr;
             size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
@@ -401,15 +382,14 @@ SORTENY_Model* load_model_weights(const char* base_path) {
                 model->synthesis_syn.conv_0.kW = dims[1];
                 model->synthesis_syn.conv_0.C_in = dims[2];
                 model->synthesis_syn.conv_0.C_out = dims[3];
+                model->synthesis_syn.conv_0.stride = 1;
             }
-            model->synthesis_syn.conv_0.stride = 1;
         } else if (strcmp(filename, "synthesis_conv_0_bias.bin") == 0) {
             model->synthesis_syn.conv_0.bias = data_ptr;
             model->synthesis_syn.conv_0.has_bias = 1;
         } else if (strcmp(filename, "synthesis_igdn_0_beta.bin") == 0) {
             model->synthesis_syn.igdn_0.beta = data_ptr;
-            size_t dims[4], nd=0;
-            if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
                 model->synthesis_syn.igdn_0.C = dims[0];
             }
             model->synthesis_syn.igdn_0.epsilon = 1.0f;
@@ -417,7 +397,6 @@ SORTENY_Model* load_model_weights(const char* base_path) {
             model->synthesis_syn.igdn_0.gamma = data_ptr;
             model->synthesis_syn.igdn_0.epsilon = 1.0f;
         }
-
         else if (strcmp(filename, "synthesis_conv_1_kernel.bin") == 0) {
             model->synthesis_syn.conv_1.kernel = data_ptr;
             size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
@@ -425,15 +404,14 @@ SORTENY_Model* load_model_weights(const char* base_path) {
                 model->synthesis_syn.conv_1.kW = dims[1];
                 model->synthesis_syn.conv_1.C_in = dims[2];
                 model->synthesis_syn.conv_1.C_out = dims[3];
+                model->synthesis_syn.conv_1.stride = 1;
             }
-            model->synthesis_syn.conv_1.stride = 1;
         } else if (strcmp(filename, "synthesis_conv_1_bias.bin") == 0) {
             model->synthesis_syn.conv_1.bias = data_ptr;
             model->synthesis_syn.conv_1.has_bias = 1;
         } else if (strcmp(filename, "synthesis_igdn_1_beta.bin") == 0) {
             model->synthesis_syn.igdn_1.beta = data_ptr;
-            size_t dims[4], nd=0;
-            if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
                 model->synthesis_syn.igdn_1.C = dims[0];
             }
             model->synthesis_syn.igdn_1.epsilon = 1.0f;
@@ -441,7 +419,6 @@ SORTENY_Model* load_model_weights(const char* base_path) {
             model->synthesis_syn.igdn_1.gamma = data_ptr;
             model->synthesis_syn.igdn_1.epsilon = 1.0f;
         }
-
         else if (strcmp(filename, "synthesis_conv_2_kernel.bin") == 0) {
             model->synthesis_syn.conv_2.kernel = data_ptr;
             size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
@@ -449,15 +426,14 @@ SORTENY_Model* load_model_weights(const char* base_path) {
                 model->synthesis_syn.conv_2.kW = dims[1];
                 model->synthesis_syn.conv_2.C_in = dims[2];
                 model->synthesis_syn.conv_2.C_out = dims[3];
+                model->synthesis_syn.conv_2.stride = 1;
             }
-            model->synthesis_syn.conv_2.stride = 1;
         } else if (strcmp(filename, "synthesis_conv_2_bias.bin") == 0) {
             model->synthesis_syn.conv_2.bias = data_ptr;
             model->synthesis_syn.conv_2.has_bias = 1;
         } else if (strcmp(filename, "synthesis_igdn_2_beta.bin") == 0) {
             model->synthesis_syn.igdn_2.beta = data_ptr;
-            size_t dims[4], nd=0;
-            if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
                 model->synthesis_syn.igdn_2.C = dims[0];
             }
             model->synthesis_syn.igdn_2.epsilon = 1.0f;
@@ -465,7 +441,6 @@ SORTENY_Model* load_model_weights(const char* base_path) {
             model->synthesis_syn.igdn_2.gamma = data_ptr;
             model->synthesis_syn.igdn_2.epsilon = 1.0f;
         }
-
         else if (strcmp(filename, "synthesis_conv_3_kernel.bin") == 0) {
             model->synthesis_syn.conv_3.kernel = data_ptr;
             size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
@@ -473,19 +448,41 @@ SORTENY_Model* load_model_weights(const char* base_path) {
                 model->synthesis_syn.conv_3.kW = dims[1];
                 model->synthesis_syn.conv_3.C_in = dims[2];
                 model->synthesis_syn.conv_3.C_out = dims[3];
+                model->synthesis_syn.conv_3.stride = 1;
             }
-            model->synthesis_syn.conv_3.stride = 1;
         } else if (strcmp(filename, "synthesis_conv_3_bias.bin") == 0) {
             model->synthesis_syn.conv_3.bias = data_ptr;
             model->synthesis_syn.conv_3.has_bias = 1;
         }
 
-        // 5. Spectral Synthesis (Inversa)
-        else if (strcmp(filename, "spectral_synthesis_kernel.bin") == 0) {
-            model->spectral_syn.dense.kernel = data_ptr;
-            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 2) {
-                model->spectral_syn.dense.C_in = dims[0];
-                model->spectral_syn.dense.C_out = dims[1];
+        // 4. Modulating Transform
+        else if (strstr(filename, "mod_dense_") == filename ||
+                 strstr(filename, "modulating__layer_with_weights-") == filename) {
+            size_t dims[4], nd=0;
+            int shape_ok = (parse_shape_dims(shape_str, dims, 4, &nd) == 0);
+
+            if (strstr(filename, "_kernel") != NULL && shape_ok && nd == 2) {
+                // Resolución robusta por forma:
+                // Dense0: [1, 192] ; Dense1: [192, 3072]
+                if (dims[0] == 1 || dims[1] == 192) {
+                    model->modulating_mod.dense_0.kernel = data_ptr;
+                    model->modulating_mod.dense_0.C_in = dims[0];
+                    model->modulating_mod.dense_0.C_out = dims[1];
+                } else {
+                    model->modulating_mod.dense_1.kernel = data_ptr;
+                    model->modulating_mod.dense_1.C_in = dims[0];
+                    model->modulating_mod.dense_1.C_out = dims[1];
+                }
+            } else if (strstr(filename, "_bias") != NULL && shape_ok && nd >= 1) {
+                // Dense0 bias: [192] ; Dense1 bias: [3072]
+                if (dims[0] <= 512) {
+                    model->modulating_mod.dense_0.bias = data_ptr;
+                } else {
+                    model->modulating_mod.dense_1.bias = data_ptr;
+                }
+            } else {
+                fprintf(stderr, "Aviso: Peso de modulación '%s' con shape no esperado (%s). Liberando.\n", filename, shape_str);
+                free(data_ptr);
             }
         }
 
@@ -509,6 +506,7 @@ void free_model_weights(SORTENY_Model* model) {
 
     // 1. Spectral
     free(model->spectral_an.dense.kernel);
+    free(model->spectral_syn.dense.kernel);
 
     // 2. Analysis
     free(model->analysis_an.conv_0.kernel);
@@ -524,14 +522,8 @@ void free_model_weights(SORTENY_Model* model) {
     free(model->analysis_an.gdn_2.beta);
     free(model->analysis_an.gdn_2.gamma);
     free(model->analysis_an.conv_3.kernel);
-    
-    // 3. Modulating
-    free(model->modulating_mod.dense_0.kernel);
-    free(model->modulating_mod.dense_0.bias);
-    free(model->modulating_mod.dense_1.kernel);
-    free(model->modulating_mod.dense_1.bias);
 
-    // 4. Synthesis
+    // 2b. Synthesis
     free(model->synthesis_syn.conv_0.kernel);
     free(model->synthesis_syn.conv_0.bias);
     free(model->synthesis_syn.igdn_0.beta);
@@ -546,9 +538,12 @@ void free_model_weights(SORTENY_Model* model) {
     free(model->synthesis_syn.igdn_2.gamma);
     free(model->synthesis_syn.conv_3.kernel);
     free(model->synthesis_syn.conv_3.bias);
-
-    // 5. Spectral Synthesis
-    free(model->spectral_syn.dense.kernel);
+    
+    // 3. Modulating
+    free(model->modulating_mod.dense_0.kernel);
+    free(model->modulating_mod.dense_0.bias);
+    free(model->modulating_mod.dense_1.kernel);
+    free(model->modulating_mod.dense_1.bias);
 
     // Finalmente, liberar la estructura principal
     free(model);

@@ -79,6 +79,18 @@ typedef struct {
     ConvLayer conv_3; // Esta no tiene ni bias ni GDN
 } AnalysisTransform;
 
+// 2b. Transformada de Síntesis (decoder)
+typedef struct {
+    // DepthToSpace -&gt; Conv(corr=False) -&gt; IGDN  (x3) + bloque final Conv
+    ConvLayer conv_0;
+    GDNLayer  igdn_0;
+    ConvLayer conv_1;
+    GDNLayer  igdn_1;
+    ConvLayer conv_2;
+    GDNLayer  igdn_2;
+    ConvLayer conv_3;
+} SynthesisTransform;
+
 // 3. Transformada de Modulación
 typedef struct {
     // [Lambda], Dense, Dense
@@ -88,9 +100,12 @@ typedef struct {
 
 
 // --- ESTRUCTURA PRINCIPAL DEL MODELO ---
+// Esta estructura contendrá TODOS los pesos cargados en RAM
 typedef struct {
     SpectralTransform      spectral_an;
+    SpectralTransform      spectral_syn;
     AnalysisTransform      analysis_an;
+    SynthesisTransform     synthesis_syn;
     ModulatingTransform    modulating_mod;
     
 } SORTENY_Model;
@@ -100,6 +115,10 @@ typedef struct {
 
 /**
  * @brief Carga todos los pesos del modelo desde la carpeta 'pesos_bin/'.
+ * * Lee TSV para saber qué archivos cargar,
+ * reserva memoria (malloc) para cada tensor en la estructura SORTENY_Model,
+ * y lee los datos binarios de los archivos .bin.
+ *
  * @param base_path Ruta a la carpeta 'pesos_bin/'.
  * @return Un puntero al modelo cargado, o NULL si falla.
  */
@@ -112,12 +131,21 @@ void free_model_weights(SORTENY_Model* model);
 
 /**
  * @brief Aplica la transformada espectral (Etapa 1).
+ * x' = A * x
  */
 void apply_spectral_analysis(float* restrict out_tensor, const float* restrict in_tensor, 
                              const SpectralTransform* tf, int H, int W);
 
 /**
+ * @brief Aplica la transformada espectral inversa (decoder).
+ * x_hat = W_syn * x_1D
+ */
+void apply_spectral_synthesis(float* restrict out_tensor, const float* restrict in_tensor,
+                              const SpectralTransform* tf, int H, int W);
+
+/**
  * @brief Aplica una convolución 2D (Etapa 2 y 4).
+ * (Implementación con bucles for)
  */
 void apply_conv2d(float* restrict out_tensor, const float* restrict in_tensor, 
                   const ConvLayer* layer, int H_in, int W_in);
@@ -129,22 +157,44 @@ void apply_gdn(float* restrict out_tensor, const float* restrict in_tensor,
                const GDNLayer* layer, int H, int W);
 
 /**
+ * @brief Aplica IGDN inversa: y = x * (beta + sum(gamma * |x|)).
+ */
+void apply_igdn(float* restrict out_tensor, const float* restrict in_tensor,
+                const GDNLayer* layer, int H, int W);
+
+/**
+ * @brief Conv2D con semántica corr=False (convolución espacial con flip de kernel).
+ */
+void apply_conv2d_corrfalse(float* restrict out_tensor, const float* restrict in_tensor,
+                            const ConvLayer* layer, int H_in, int W_in);
+
+/**
+ * @brief DepthToSpace con block_size=2 para tensor planar (C x H x W).
+ */
+void apply_depth_to_space_2x(float* restrict out_tensor, const float* restrict in_tensor,
+                             int C_in, int H_in, int W_in);
+
+/**
  * @brief Aplica una capa Densa (Etapa 1 y 3).
+ * y = x * W + b
  */
 void apply_dense(float* restrict out_tensor, const float* restrict in_tensor, 
                  const DenseLayer* layer);
 
 /**
- * @brief Aplica la activación ReLU.
+ * @brief Aplica la activación ReLU (usada en Modulación e Hiper-Análisis).
+ * y = max(0, x)
  */
 void apply_relu(float* restrict tensor, int size);
+
 
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // SORTENY_MODEL_H</code></pre>
+#endif 
+</code></pre>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>

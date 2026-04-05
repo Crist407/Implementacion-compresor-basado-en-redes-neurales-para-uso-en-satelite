@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <sys/stat.h>
+
 #include "sorteny_model.h"
 #include "io_helpers.h"
 #ifdef _OPENMP
@@ -96,15 +97,11 @@ static int invert_matrix(const float* A, float* A_inv, int n) {
     return 0;
 }
 
-/**
- * Si spectral_synthesis_kernel.bin no se cargó, derivarla numéricamente
- * invirtiendo la spectral_analysis_kernel.
- */
 static int ensure_spectral_synthesis(SORTENY_Model* model) {
     if (model->spectral_syn.dense.kernel &&
         model->spectral_syn.dense.C_in == model->spectral_syn.dense.C_out &&
         model->spectral_syn.dense.C_in > 0) {
-        return 0; // ya cargada
+        return 0;
     }
 
     if (!model->spectral_an.dense.kernel ||
@@ -121,42 +118,40 @@ static int ensure_spectral_synthesis(SORTENY_Model* model) {
     float* W_syn = (float*)malloc((size_t)n * n * sizeof(float));
     if (!W_syn) return -1;
 
-    // W = inv(A): aplicado como sum_j in[j] * W[j,i] = (W^T · in)[i]
-    // que iguala tf.linalg.matvec(tf.linalg.matrix_transpose(inv(A)), x)
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
-            W_syn[i * n + j] = invA[i * n + j];
+    // En C aplicamos: out[i] = sum_j in[j] * W[j,i].
+    // Para igualar tf.linalg.matvec(tf.linalg.matrix_transpose(B), x), con B=inv(A),
+    // debe cumplirse W[j,i] = B[j,i] => W = inv(A).
+    for (int in = 0; in < n; ++in) {
+        for (int out = 0; out < n; ++out) {
+            W_syn[in * n + out] = invA[in * n + out];
         }
     }
 
     model->spectral_syn.dense.kernel = W_syn;
     model->spectral_syn.dense.C_in = (size_t)n;
     model->spectral_syn.dense.C_out = (size_t)n;
-    fprintf(stderr, "[WARN] spectral_synthesis_kernel.bin no encontrado. Usando inversa numérica.\n");
+    fprintf(stderr, "[WARN] spectral_synthesis_kernel.bin no encontrado. Usando inversa numérica de spectral_analysis.\n");
     return 0;
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 4 || argc > 5) {
-        fprintf(stderr, "Uso: %s <input.bin> <output.raw> <weights_dir> [max_lambda]\n", argv[0]);
-        fprintf(stderr, "Ej:   %s output/latent.bin output/recon.raw weights/pesos_decoder 0.125\n", argv[0]);
+    if (argc < 3 || argc > 5) {
+        fprintf(stderr, "Uso: %s <input.bin> <output.raw> [weights_dir] [max_lambda]\n", argv[0]);
+        fprintf(stderr, "Ej:   %s results/output_c.bin output/recon.raw weights/pesos_ieec050_decoder 0.125\n", argv[0]);
         return 1;
     }
 
     const char* input_bin = argv[1];
     const char* output_raw = argv[2];
-    const char* weights_dir = argv[3];
+    const char* weights_dir = (argc >= 4) ? argv[3] : "weights/pesos_ieec050_decoder";
     float max_lambda = (argc >= 5) ? (float)atof(argv[4]) : DEFAULT_MAX_LAMBDA;
     if (max_lambda <= 0.0f) max_lambda = DEFAULT_MAX_LAMBDA;
-
-    // Modo paridad estricta
     const char* strict_env = getenv("STRICT_PARITY");
     int strict_parity = (strict_env && strict_env[0] == '1');
     const char* use_half_even_env = getenv("USE_HALF_EVEN");
-    int use_half_even = 1; // por defecto half-to-even para máxima paridad con Python
+    int use_half_even = 1;
     if (use_half_even_env) use_half_even = (use_half_even_env[0] == '1');
     if (strict_parity) use_half_even = 1;
-
     if (strict_parity) {
         printf("[STRICT] Parity mode enabled: deterministic + half-to-even.\n");
 #ifdef _OPENMP
@@ -180,7 +175,6 @@ int main(int argc, char* argv[]) {
     float* spectral_domain = NULL;
     float* output_image = NULL;
 
-    // Validar tamaño del archivo de entrada
     struct stat st;
     if (stat(input_bin, &st) != 0) {
         fprintf(stderr, "Error: no se pudo leer metadatos de '%s'\n", input_bin);
@@ -193,7 +187,6 @@ int main(int argc, char* argv[]) {
         goto cleanup;
     }
 
-    // Leer cabecera
     CompressedHeader h = {0};
     if (fread(&h, sizeof(uint16_t), 5, f_in) != 5) {
         fprintf(stderr, "Error: cabecera incompleta en '%s'\n", input_bin);
@@ -201,11 +194,11 @@ int main(int argc, char* argv[]) {
     }
 
     if (h.bands != EXPECTED_BANDS) {
-        fprintf(stderr, "Error: bands=%u no soportado (esperado %d)\n", h.bands, EXPECTED_BANDS);
+        fprintf(stderr, "Error: bands=%u no soportado en v1 (esperado %d)\n", h.bands, EXPECTED_BANDS);
         goto cleanup;
     }
     if (h.datatype != EXPECTED_DTYPE_U16) {
-        fprintf(stderr, "Error: datatype=%u no soportado (esperado %d)\n", h.datatype, EXPECTED_DTYPE_U16);
+        fprintf(stderr, "Error: datatype=%u no soportado en v1 (esperado %d)\n", h.datatype, EXPECTED_DTYPE_U16);
         goto cleanup;
     }
     if (h.height == 0 || h.width == 0 || h.num_filters == 0) {
@@ -250,7 +243,7 @@ int main(int argc, char* argv[]) {
     }
     fclose(f_in); f_in = NULL;
 
-    // v1: mapa Q constante
+    // v1: se asume mapa Q constante.
     uint8_t q0 = q_map[0];
     for (size_t i = 1; i < q_map_size; ++i) {
         if (q_map[i] != q0) {
@@ -261,25 +254,19 @@ int main(int argc, char* argv[]) {
 
     float lambda_quant = ((float)q0 / 255.0f) * (max_lambda - MIN_LAMBDA) + MIN_LAMBDA;
 
-    printf("=== SORTENY Decompressor ===\n");
-    printf("Bitstream: B=%zu H=%zu W=%zu C_lat=%zu Q=%u lambda_q=%.6f\n",
-           B, H, W, C_lat, q0, lambda_quant);
-
-    // Cargar modelo
-    printf("Cargando modelo desde '%s'...\n", weights_dir);
+    printf("Cargando modelo decoder desde '%s'...\n", weights_dir);
     model = load_model_weights(weights_dir);
     if (!model) goto cleanup;
 
-    // Derivar espectral inversa si no existe
     if (ensure_spectral_synthesis(model) != 0) {
-        fprintf(stderr, "Error: faltan pesos de transformada espectral inversa.\n");
+        fprintf(stderr, "Error: faltan pesos de transformada espectral inversa y no se pudo derivar desde análisis.\n");
         goto cleanup;
     }
 
-    // Validaciones de pesos
+    // Comprobaciones mínimas de pesos requeridos.
     if (!model->modulating_mod.dense_0.kernel || !model->modulating_mod.dense_0.bias ||
         !model->modulating_mod.dense_1.kernel || !model->modulating_mod.dense_1.bias) {
-        fprintf(stderr, "Error: faltan pesos de modulación\n");
+        fprintf(stderr, "Error: faltan pesos de modulación en '%s'\n", weights_dir);
         goto cleanup;
     }
     if (!model->synthesis_syn.conv_0.kernel || !model->synthesis_syn.conv_0.bias ||
@@ -289,14 +276,19 @@ int main(int argc, char* argv[]) {
         !model->synthesis_syn.igdn_0.beta || !model->synthesis_syn.igdn_0.gamma ||
         !model->synthesis_syn.igdn_1.beta || !model->synthesis_syn.igdn_1.gamma ||
         !model->synthesis_syn.igdn_2.beta || !model->synthesis_syn.igdn_2.gamma) {
-        fprintf(stderr, "Error: faltan pesos de síntesis/IGDN\n");
+        fprintf(stderr, "Error: faltan pesos de síntesis/IGDN en '%s'\n", weights_dir);
         goto cleanup;
     }
 
-    // Verificar compatibilidad de canales
+    // Comprobar compatibilidad de canales entre bitstream y pesos.
     if (model->modulating_mod.dense_1.C_out != B * C_lat) {
         fprintf(stderr, "Error: salida del modulador (%zu) no coincide con bandas*filtros (%zu)\n",
                 model->modulating_mod.dense_1.C_out, B * C_lat);
+        goto cleanup;
+    }
+    if (model->synthesis_syn.conv_3.C_out != 1) {
+        fprintf(stderr, "Error: synthesis conv_3 debe producir 1 canal por banda (C_out=%zu)\n",
+                model->synthesis_syn.conv_3.C_out);
         goto cleanup;
     }
 
@@ -309,35 +301,35 @@ int main(int argc, char* argv[]) {
     size_t c3_in = model->synthesis_syn.conv_3.C_in;
 
     if ((C_lat % 4) != 0 || (C_lat / 4) != c0_in) {
-        fprintf(stderr, "Error: mismatch canales stage0\n");
+        fprintf(stderr, "Error: mismatch canales stage0: C_lat=%zu, conv0.C_in=%zu\n", C_lat, c0_in);
         goto cleanup;
     }
     if ((c0_out % 4) != 0 || (c0_out / 4) != c1_in) {
-        fprintf(stderr, "Error: mismatch canales stage1\n");
+        fprintf(stderr, "Error: mismatch canales stage1: conv0.C_out=%zu, conv1.C_in=%zu\n", c0_out, c1_in);
         goto cleanup;
     }
     if ((c1_out % 4) != 0 || (c1_out / 4) != c2_in) {
-        fprintf(stderr, "Error: mismatch canales stage2\n");
+        fprintf(stderr, "Error: mismatch canales stage2: conv1.C_out=%zu, conv2.C_in=%zu\n", c1_out, c2_in);
         goto cleanup;
     }
     if ((c2_out % 4) != 0 || (c2_out / 4) != c3_in) {
-        fprintf(stderr, "Error: mismatch canales stage3\n");
+        fprintf(stderr, "Error: mismatch canales stage3: conv2.C_out=%zu, conv3.C_in=%zu\n", c2_out, c3_in);
         goto cleanup;
     }
 
-    // Modulación inversa
+    printf("Bitstream OK: B=%zu H=%zu W=%zu C_lat=%zu Q=%u lambda_q=%.6f\n",
+           B, H, W, C_lat, q0, lambda_quant);
+
+    // Modulación inversa.
     mod_hidden = allocate_tensor(model->modulating_mod.dense_0.C_out, 1, 1, "mod_hidden");
     modulator = allocate_tensor(model->modulating_mod.dense_1.C_out, 1, 1, "modulator");
     if (!mod_hidden || !modulator) goto cleanup;
 
-    {
-        float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
-        apply_dense(mod_hidden, input_lambda, &model->modulating_mod.dense_0);
-        apply_relu(mod_hidden, (int)model->modulating_mod.dense_0.C_out);
-        apply_dense(modulator, mod_hidden, &model->modulating_mod.dense_1);
-        apply_relu(modulator, (int)model->modulating_mod.dense_1.C_out);
-        printf("  M[0]=%.4f, M[100]=%.4f\n", modulator[0], modulator[100]);
-    }
+    float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
+    apply_dense(mod_hidden, input_lambda, &model->modulating_mod.dense_0);
+    apply_relu(mod_hidden, (int)model->modulating_mod.dense_0.C_out);
+    apply_dense(modulator, mod_hidden, &model->modulating_mod.dense_1);
+    apply_relu(modulator, (int)model->modulating_mod.dense_1.C_out);
 
     size_t HW = H * W;
     size_t plane4 = H4 * W4;
@@ -358,12 +350,9 @@ int main(int argc, char* argv[]) {
     output_image = allocate_tensor(B, H, W, "output_image");
     if (!band_latent || !ds || !buf0 || !buf1 || !spectral_domain || !output_image) goto cleanup;
 
-    // Synthesis Transform (8 bands)
-    printf("Ejecutando Synthesis Transform (%zu bandas)...\n", B);
+    printf("Ejecutando pipeline de decodificación...\n");
     for (size_t b = 0; b < B; ++b) {
-        printf("  Banda %zu/%zu...\n", b + 1, B);
-
-        // Desmodulación por banda/canal
+        // Desmodulación por banda/canal.
         for (size_t c = 0; c < C_lat; ++c) {
             float m = modulator[b * C_lat + c];
             if (fabsf(m) < 1e-8f) m = 1e-8f;
@@ -374,39 +363,33 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // g_s: DepthToSpace -> Conv(corr=False) -> IGDN (x3) + Conv final
-        apply_depth_to_space(ds, band_latent, (int)C_lat, (int)H0, (int)W0, 2);
-        apply_conv2d_corr_false(buf0, ds, &model->synthesis_syn.conv_0, (int)H1, (int)W1);
+        // g_s: DepthToSpace -> Conv(corr=False) -> IGDN (x3) + bloque final Conv.
+        apply_depth_to_space_2x(ds, band_latent, (int)C_lat, (int)H0, (int)W0);         // -> c0_in, H1, W1
+        apply_conv2d_corrfalse(buf0, ds, &model->synthesis_syn.conv_0, (int)H1, (int)W1);
         apply_igdn(buf1, buf0, &model->synthesis_syn.igdn_0, (int)H1, (int)W1);
 
-        apply_depth_to_space(ds, buf1, (int)c0_out, (int)H1, (int)W1, 2);
-        apply_conv2d_corr_false(buf0, ds, &model->synthesis_syn.conv_1, (int)H2, (int)W2);
+        apply_depth_to_space_2x(ds, buf1, (int)c0_out, (int)H1, (int)W1);                // -> c1_in, H2, W2
+        apply_conv2d_corrfalse(buf0, ds, &model->synthesis_syn.conv_1, (int)H2, (int)W2);
         apply_igdn(buf1, buf0, &model->synthesis_syn.igdn_1, (int)H2, (int)W2);
 
-        apply_depth_to_space(ds, buf1, (int)c1_out, (int)H2, (int)W2, 2);
-        apply_conv2d_corr_false(buf0, ds, &model->synthesis_syn.conv_2, (int)H3, (int)W3);
+        apply_depth_to_space_2x(ds, buf1, (int)c1_out, (int)H2, (int)W2);                // -> c2_in, H3, W3
+        apply_conv2d_corrfalse(buf0, ds, &model->synthesis_syn.conv_2, (int)H3, (int)W3);
         apply_igdn(buf1, buf0, &model->synthesis_syn.igdn_2, (int)H3, (int)W3);
 
-        apply_depth_to_space(ds, buf1, (int)c2_out, (int)H3, (int)W3, 2);
-        apply_conv2d_corr_false(buf0, ds, &model->synthesis_syn.conv_3, (int)H, (int)W);
+        apply_depth_to_space_2x(ds, buf1, (int)c2_out, (int)H3, (int)W3);                // -> c3_in, H, W
+        apply_conv2d_corrfalse(buf0, ds, &model->synthesis_syn.conv_3, (int)H, (int)W);  // -> 1, H, W
 
-        // Desnormalizar (* 65535) y guardar en dominio espectral
+        // Lambda final de SynthesisTransform: x * 65535
         size_t boff = b * HW;
         for (size_t p = 0; p < HW; ++p) {
             spectral_domain[boff + p] = buf0[p] * NORM_CONST;
         }
     }
 
-    free(latents); latents = NULL;
-    free(band_latent); band_latent = NULL;
-    printf("  Synthesis Transform completada.\n");
-
-    // Transformada espectral inversa
-    printf("Ejecutando Transformada Espectral Inversa...\n");
+    // Transformada espectral inversa.
     apply_spectral_synthesis(output_image, spectral_domain, &model->spectral_syn, (int)H, (int)W);
 
-    // Guardar como RAW BSQ uint16 (half-to-even para máxima paridad con Python)
-    printf("Guardando '%s'...\n", output_raw);
+    // Salida RAW BSQ uint16. Por defecto usa half-even; se puede desactivar con USE_HALF_EVEN=0.
     if (save_image_bsq_u16_from_planar_f32(output_raw, output_image, (int)B, (int)H, (int)W, use_half_even) != 0) {
         goto cleanup;
     }

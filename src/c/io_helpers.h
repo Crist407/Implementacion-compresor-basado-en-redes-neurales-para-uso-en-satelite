@@ -53,6 +53,7 @@ int save_tensor_planar_f32(const char* filename, const float* tensor, int C, int
  * @return 0 en éxito, -1 en error
  */
 int save_image_bsq_u16_from_planar_f32(const char* filename, const float* tensor, int B, int H, int W, int use_half_even);
+
 #ifdef __cplusplus
 }
 #endif

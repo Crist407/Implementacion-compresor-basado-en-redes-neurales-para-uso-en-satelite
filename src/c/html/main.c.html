@@ -63,6 +63,9 @@
 #define H_Y H4           // 32
 #define W_Y W4           // 32
 
+// TODAS ESTAS DIMENSIONES PODRÍAN CAMBIAR SI SE MODIFICA EL MODELO, TENERLO EN CUENTA.
+// ESTAS DIMENSIONES LAS HEMOS SACADO DEL weights_index.json Y DEBEN COINCIDIR CON LOS PESOS CARGADOS.
+
 // El normalizador de la primera capa Lambda de AnalysisTransform
 #define NORM_CONST 65535.0f // (2**16) - 1
 
@@ -96,7 +99,10 @@ int main(int argc, char* argv[]) {
     float lambda = (float)atof(argv[2]);
     const char* output_file = argv[3];
     const char* model_path = (argc &gt;= 5) ? argv[4] : "weights/pesos_bin";
-    
+    /*
+     * max_lambda (opcional): si se proporciona (argc == 6) escalamos lambda -&gt; lambda/max_lambda
+     * Esto permite normalizar el rango dinámico de lambdas antes de la ModulatingTransform.
+     */
     float max_lambda = 0.0f;
     if (argc == 6) {
         max_lambda = (float)atof(argv[5]);
@@ -117,18 +123,21 @@ int main(int argc, char* argv[]) {
     SORTENY_Model* model = NULL;
     float* in_image_tensor = NULL;
     float* spectral_out = NULL;
-    float* scratch_a = NULL;
-    float* scratch_b = NULL;
-    float* band_normalized = NULL;
+    float* scratch_a = NULL; // tamaño máximo: C0 x H1 x W1
+    float* scratch_b = NULL; // tamaño máximo: C0 x H1 x W1
+    float* band_normalized = NULL; // Buffer para normalización Lambda x/65535
     float* band_Y = NULL;
+    int32_t* band_q_i32 = NULL;
     float* mod_hidden = NULL;
     float* modulator  = NULL;
+    // Buffers opcionales para volcados de etapas (conv0_pre/gdn0)
     float* conv0_pre_all = NULL;
     float* gdn0_all = NULL;
     float* gdn1_all = NULL;
     float* gdn2_all = NULL;
+    FILE* f_out = NULL;
 
-    // Modo de paridad estricta
+    // Modo de paridad estricta: fuerza half-to-even y ejecución determinista
     const char* strict_env = getenv("STRICT_PARITY");
     int strict_parity = (strict_env &amp;&amp; strict_env[0] == '1');
     if (strict_parity) {
@@ -147,10 +156,12 @@ int main(int argc, char* argv[]) {
     }
 
     // 2. Cargar Imagen de Entrada (RAW sin normalizar)
+    // Forzamos little-endian (1) y NO escalamos aquí (0) para replicar Python
     in_image_tensor = load_image_bsq_u16_to_planar_f32_ex(input_file, BANDS, H_IN, W_IN, 1, 0); 
     if (in_image_tensor == NULL) {
         goto cleanup;
     }
+
 
     // 3. Reservar Memoria para Tensores Intermedios
     printf("Reservando memoria para tensores intermedios...\n");
@@ -161,7 +172,8 @@ int main(int argc, char* argv[]) {
     mod_hidden = allocate_tensor(MOD_HIDDEN, 1, 1, "mod_hidden");
     modulator  = allocate_tensor(MOD_OUT, 1, 1, "modulator (M)");
     
-    // Reservar buffers para volcados por etapas SOLO si se solicitan
+    // Reservar buffers para volcados por etapas SOLO si se solicitan (DUMP_STAGES=1)
+    // Estos buffers pueden consumir mucha memoria adicional, usarlos solo para debug.
     const char* dump_stages_env = getenv("DUMP_STAGES");
     int do_stages = (dump_stages_env &amp;&amp; dump_stages_env[0] == '1');
     if (do_stages) {
@@ -176,56 +188,65 @@ int main(int argc, char* argv[]) {
         goto cleanup;
     }
 
+
     // 4. --- INICIO DEL PIPELINE DE INFERENCIA ---
     printf("Iniciando pipeline de inferencia...\n");
     
-    // Etapa 1: Transformada Espectral
+    // Etapa 1: Transformada Espectral (Todas las bandas a la vez)
     printf("  (1/5) Ejecutando Transformada Espectral...\n");
     apply_spectral_analysis(spectral_out, in_image_tensor, &amp;model-&gt;spectral_an, H_IN, W_IN);
     
+    
     printf("  (2/5) Init Analysis buffers...\n");
-    free(in_image_tensor); in_image_tensor = NULL;
+    free(in_image_tensor); in_image_tensor = NULL; // Liberamos la imagen original
 
-    // Etapa 2: Modulating Transform
+    // Etapa 2: Modulating Transform (Calcular el factor de escala 'M') antes del bucle de bandas
     if (max_lambda &gt; 0.0f) {
         printf("  (3/5) Ejecutando Modulating Transform (Lambda=%.6f, max_lambda=%.6f)\n", lambda, max_lambda);
     } else {
         printf("  (3/5) Ejecutando Modulating Transform (Lambda=%.6f, sin max_lambda)\n", lambda);
     }
 
-    // Cuantización de lambda
+    // Cuantización de lambda como en Python: Q = round((lambda - min_lambda)/(max_lambda - min_lambda)*255)
     uint8_t q_byte = (uint8_t)lrintf(((lambda - MIN_LAMBDA) / (max_lambda - MIN_LAMBDA)) * 255.0f);
+    // Decuantización: lambda_quant = (Q/255)*(max_lambda - min_lambda) + min_lambda
     float lambda_quant = ((float)q_byte / 255.0f) * (max_lambda - MIN_LAMBDA) + MIN_LAMBDA;
 
+    // El modulador tiene una capa Lambda interna que hace: x / maxval (donde maxval=0.05)
+    // Esta división es NECESARIA para replicar el comportamiento de TensorFlow
     float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
     apply_dense(mod_hidden, input_lambda, &amp;model-&gt;modulating_mod.dense_0);
     apply_relu(mod_hidden, MOD_HIDDEN);
     apply_dense(modulator, mod_hidden, &amp;model-&gt;modulating_mod.dense_1);
+    
+    // Aplicar ReLU final a la salida (UNA SOLA VEZ)
     apply_relu(modulator, MOD_OUT);
     printf("        ...Modulador 'M' calculado. input_lambda=%.4f, M[0]=%.2f, M[100]=%.2f\n", 
            input_lambda[0], modulator[0], modulator[100]);
     
     // Preparar salida en streaming
-    FILE* f_out = fopen(output_file, "wb");
+    f_out = fopen(output_file, "wb");
     if (!f_out) { fprintf(stderr, "Error: no se pudo abrir '%s' para escritura.\n", output_file); goto cleanup; }
+    // Buffer de salida grande para reducir llamadas al sistema en escrituras largas.
+    setvbuf(f_out, NULL, _IOFBF, 1 &lt;&lt; 20);
 
-    // Cabecera estilo Python
+    // Cabecera estilo Python: 5 x uint16 (bands, height, width, datatype, num_filters)
     uint16_t header[5];
     header[0] = (uint16_t)BANDS;
     header[1] = (uint16_t)H_IN;
     header[2] = (uint16_t)W_IN;
-    header[3] = (uint16_t)2;
-    header[4] = (uint16_t)C3_AN;
+    header[3] = (uint16_t)2;       // datatype uint16
+    header[4] = (uint16_t)C3_AN;   // num_filters
     size_t hwritten = fwrite(header, sizeof(uint16_t), 5, f_out);
     if (hwritten != 5) { fprintf(stderr, "Error: escritura de cabecera incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
 
-    // Mapa Q (32x32) constante
+    // Mapa Q (32x32) constante: lambda cuantizada a 8 bits
     uint8_t q_map[H4 * W4];
     for (size_t i = 0; i &lt; H4 * W4; ++i) q_map[i] = q_byte;
     size_t qwritten = fwrite(q_map, sizeof(uint8_t), H4 * W4, f_out);
     if (qwritten != H4 * W4) { fprintf(stderr, "Error: escritura de Q incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
 
-    // Dumps opcionales
+    // Dumps opcionales en streaming
     const char* dump_ypre_env = getenv("DUMP_Y_PRE");
     const char* dump_debug_env = getenv("DEBUG_DUMP");
     int do_dump_ypre = ((dump_ypre_env &amp;&amp; dump_ypre_env[0] == '1') || (dump_debug_env &amp;&amp; dump_debug_env[0] == '1'));
@@ -242,93 +263,106 @@ int main(int argc, char* argv[]) {
         f_yfloat = fopen(p_yfloat, "wb"); if (!f_yfloat) fprintf(stderr, "[WARN] No se pudo abrir Y_float_c.bin\n");
     }
 
-    // Etapa 3: Analysis Transform (Bucle sobre las 8 bandas)
+    // Etapa 3: Analysis Transform (Bucle sobre las 8 bandas) + modulación y cuantización por banda
     printf("  (4/5) Ejecutando Analysis Transform (Bucle de 8 bandas) y cuantización en streaming...\n"); 
     
+    
+    // Alocar buffer temporal para entrada normalizada
     band_normalized = (float*)malloc(H_IN * W_IN * sizeof(float));
     if (!band_normalized) {
         fprintf(stderr, "Error: No se pudo alocar memoria para band_normalized\n");
         goto cleanup;
     }
 
+
+    // Configuración de redondeo (constante para todo el bucle)
     const char* use_half_even_env = getenv("USE_HALF_EVEN");
     int use_half_even = strict_parity ? 1 : (use_half_even_env &amp;&amp; use_half_even_env[0] == '1');
     size_t plane_sz = (size_t)H_Y * W_Y;
+    size_t band_latent_elems = (size_t)C3_AN * plane_sz;
+    band_q_i32 = (int32_t*)malloc(band_latent_elems * sizeof(int32_t));
+    if (!band_q_i32) {
+        fprintf(stderr, "Error: No se pudo alocar memoria para buffer de latentes int32.\n");
+        goto cleanup;
+    }
 
     for (int b = 0; b &lt; BANDS; b++) {
         const float* band_input_raw = spectral_out + (b * H_IN * W_IN);
         
-        // Normalizar entrada (Lambda layer)
+        // Normalizar entrada (simular Lambda del modelo TF)
         for (int i = 0; i &lt; H_IN * W_IN; i++) {
             band_normalized[i] = band_input_raw[i] / NORM_CONST;
         }
+        
 
-        // 1. Capa 0
+        
+        // 1. Capa 0 (con entrada normalizada)
         apply_conv2d(scratch_a, band_normalized, &amp;model-&gt;analysis_an.conv_0, H_IN, W_IN);
+
 
         if (do_stages &amp;&amp; conv0_pre_all) {
             size_t sz = (size_t)C0 * (size_t)H1 * (size_t)W1;
             memcpy(conv0_pre_all + (b * sz), scratch_a, sz * sizeof(float));
         }
         
-        // 2. GDN 0
+        // 2. GDN 0: scratch_a -&gt; scratch_b
         apply_gdn(scratch_b, scratch_a, &amp;model-&gt;analysis_an.gdn_0, H1, W1);
+        
 
+        
         if (do_stages &amp;&amp; gdn0_all) {
             size_t sz = (size_t)C0 * (size_t)H1 * (size_t)W1;
             memcpy(gdn0_all + (b * sz), scratch_b, sz * sizeof(float));
         }
         
-        // 3. Capa 1
+        // 3. Capa 1: scratch_b -&gt; scratch_a (Reutilizamos A)
         apply_conv2d(scratch_a, scratch_b, &amp;model-&gt;analysis_an.conv_1, H1, W1);
         
-        // 4. GDN 1
+        // 4. GDN 1: scratch_a -&gt; scratch_b (Reutilizamos B)
         apply_gdn(scratch_b, scratch_a, &amp;model-&gt;analysis_an.gdn_1, H2, W2);
         if (do_stages &amp;&amp; gdn1_all) {
             size_t sz = (size_t)C1 * (size_t)H2 * (size_t)W2;
             memcpy(gdn1_all + (b * sz), scratch_b, sz * sizeof(float));
         }
         
-        // 5. Capa 2
+        // 5. Capa 2: scratch_b -&gt; scratch_a (Reutilizamos A)
         apply_conv2d(scratch_a, scratch_b, &amp;model-&gt;analysis_an.conv_2, H2, W2);
         
-        // 6. GDN 2
+        // 6. GDN 2: scratch_a -&gt; scratch_b (Reutilizamos B)
         apply_gdn(scratch_b, scratch_a, &amp;model-&gt;analysis_an.gdn_2, H3, W3);
         if (do_stages &amp;&amp; gdn2_all) {
             size_t sz = (size_t)C2 * (size_t)H3 * (size_t)W3;
             memcpy(gdn2_all + (b * sz), scratch_b, sz * sizeof(float));
         }
         
-        // 7. Layer 3 (Output)
+        // 7. Layer 3 (Output): scratch_b -&gt; band_Y (sin GDN, sin bias)
         apply_conv2d(band_Y, scratch_b, &amp;model-&gt;analysis_an.conv_3, H3, W3);
         
         // 8. Modulación + Cuantización por banda
+
+        
         for (size_t c = 0; c &lt; C3_AN; c++) {
             float M_val = modulator[b * C3_AN + c];
             size_t plane_off = c * plane_sz;
             for (size_t p = 0; p &lt; plane_sz; p++) {
                 float prod = band_Y[plane_off + p] * M_val;
+                float qv_f = 0.0f;
                 if (use_half_even) {
                     float _n = floorf(prod);
                     float _diff = prod - _n;
-                    float r_he = (_diff &gt; 0.5f) ? (_n + 1.0f) : (_diff &lt; 0.5f ? _n : ((fmodf(_n, 2.0f) == 0.0f) ? _n : (_n + 1.0f)));
-                    band_Y[plane_off + p] = r_he;
+                    qv_f = (_diff &gt; 0.5f) ? (_n + 1.0f) : (_diff &lt; 0.5f ? _n : ((((int64_t)_n &amp; 1LL) == 0LL) ? _n : (_n + 1.0f)));
                 } else {
-                    band_Y[plane_off + p] = roundf(prod);
+                    qv_f = roundf(prod);
                 }
+                band_q_i32[plane_off + p] = (int32_t)lrintf(qv_f);
             }
+
         }
 
-        // Escribir banda cuantizada
-        for (size_t c = 0; c &lt; C3_AN; c++) {
-            size_t plane_off = c * plane_sz;
-            for (size_t p = 0; p &lt; plane_sz; p++) {
-                int32_t qv = (int32_t)lrintf(band_Y[plane_off + p]);
-                if (fwrite(&amp;qv, sizeof(int32_t), 1, f_out) != 1) {
-                    fprintf(stderr, "Error: escritura incompleta en salida (banda %d, canal %zu)\n", b, c);
-                    fclose(f_out); f_out=NULL; goto cleanup;
-                }
-            }
+        // Escribir toda la banda cuantizada en un solo bloque (orden band, channel, h, w).
+        if (fwrite(band_q_i32, sizeof(int32_t), band_latent_elems, f_out) != band_latent_elems) {
+            fprintf(stderr, "Error: escritura incompleta en salida (banda %d)\n", b);
+            fclose(f_out); f_out=NULL; goto cleanup;
         }
     }
 
@@ -340,11 +374,13 @@ int main(int argc, char* argv[]) {
     free(scratch_a); scratch_a = NULL;
     free(scratch_b); scratch_b = NULL;
     
+    // Liberar buffers de etapas si existen
     if (conv0_pre_all) { free(conv0_pre_all); conv0_pre_all = NULL; }
     if (gdn0_all) { free(gdn0_all); gdn0_all = NULL; }
     if (gdn1_all) { free(gdn1_all); gdn1_all = NULL; }
     if (gdn2_all) { free(gdn2_all); gdn2_all = NULL; }
 
+    // Cerrar ficheros de streaming
     if (f_ypre) { fclose(f_ypre); f_ypre = NULL; }
     if (f_yfloat) { fclose(f_yfloat); f_yfloat = NULL; }
 
@@ -360,9 +396,11 @@ cleanup:
     if (mod_hidden) free(mod_hidden);
     if (modulator) free(modulator);
     if (band_normalized) free(band_normalized);
+    if (band_q_i32) free(band_q_i32);
 
     return ret;
-}</code></pre>
+}
+</code></pre>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/c.min.js"></script>
