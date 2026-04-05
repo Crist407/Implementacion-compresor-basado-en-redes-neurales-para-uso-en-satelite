@@ -393,6 +393,102 @@ SORTENY_Model* load_model_weights(const char* base_path) {
             model->modulating_mod.dense_1.bias = data_ptr;
         }
 
+        // 4. Synthesis Transform
+        else if (strcmp(filename, "synthesis_conv_0_kernel.bin") == 0) {
+            model->synthesis_syn.conv_0.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
+                model->synthesis_syn.conv_0.kH = dims[0];
+                model->synthesis_syn.conv_0.kW = dims[1];
+                model->synthesis_syn.conv_0.C_in = dims[2];
+                model->synthesis_syn.conv_0.C_out = dims[3];
+            }
+            model->synthesis_syn.conv_0.stride = 1;
+        } else if (strcmp(filename, "synthesis_conv_0_bias.bin") == 0) {
+            model->synthesis_syn.conv_0.bias = data_ptr;
+            model->synthesis_syn.conv_0.has_bias = 1;
+        } else if (strcmp(filename, "synthesis_igdn_0_beta.bin") == 0) {
+            model->synthesis_syn.igdn_0.beta = data_ptr;
+            size_t dims[4], nd=0;
+            if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
+                model->synthesis_syn.igdn_0.C = dims[0];
+            }
+            model->synthesis_syn.igdn_0.epsilon = 1.0f;
+        } else if (strcmp(filename, "synthesis_igdn_0_gamma.bin") == 0) {
+            model->synthesis_syn.igdn_0.gamma = data_ptr;
+            model->synthesis_syn.igdn_0.epsilon = 1.0f;
+        }
+
+        else if (strcmp(filename, "synthesis_conv_1_kernel.bin") == 0) {
+            model->synthesis_syn.conv_1.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
+                model->synthesis_syn.conv_1.kH = dims[0];
+                model->synthesis_syn.conv_1.kW = dims[1];
+                model->synthesis_syn.conv_1.C_in = dims[2];
+                model->synthesis_syn.conv_1.C_out = dims[3];
+            }
+            model->synthesis_syn.conv_1.stride = 1;
+        } else if (strcmp(filename, "synthesis_conv_1_bias.bin") == 0) {
+            model->synthesis_syn.conv_1.bias = data_ptr;
+            model->synthesis_syn.conv_1.has_bias = 1;
+        } else if (strcmp(filename, "synthesis_igdn_1_beta.bin") == 0) {
+            model->synthesis_syn.igdn_1.beta = data_ptr;
+            size_t dims[4], nd=0;
+            if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
+                model->synthesis_syn.igdn_1.C = dims[0];
+            }
+            model->synthesis_syn.igdn_1.epsilon = 1.0f;
+        } else if (strcmp(filename, "synthesis_igdn_1_gamma.bin") == 0) {
+            model->synthesis_syn.igdn_1.gamma = data_ptr;
+            model->synthesis_syn.igdn_1.epsilon = 1.0f;
+        }
+
+        else if (strcmp(filename, "synthesis_conv_2_kernel.bin") == 0) {
+            model->synthesis_syn.conv_2.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
+                model->synthesis_syn.conv_2.kH = dims[0];
+                model->synthesis_syn.conv_2.kW = dims[1];
+                model->synthesis_syn.conv_2.C_in = dims[2];
+                model->synthesis_syn.conv_2.C_out = dims[3];
+            }
+            model->synthesis_syn.conv_2.stride = 1;
+        } else if (strcmp(filename, "synthesis_conv_2_bias.bin") == 0) {
+            model->synthesis_syn.conv_2.bias = data_ptr;
+            model->synthesis_syn.conv_2.has_bias = 1;
+        } else if (strcmp(filename, "synthesis_igdn_2_beta.bin") == 0) {
+            model->synthesis_syn.igdn_2.beta = data_ptr;
+            size_t dims[4], nd=0;
+            if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd >= 1) {
+                model->synthesis_syn.igdn_2.C = dims[0];
+            }
+            model->synthesis_syn.igdn_2.epsilon = 1.0f;
+        } else if (strcmp(filename, "synthesis_igdn_2_gamma.bin") == 0) {
+            model->synthesis_syn.igdn_2.gamma = data_ptr;
+            model->synthesis_syn.igdn_2.epsilon = 1.0f;
+        }
+
+        else if (strcmp(filename, "synthesis_conv_3_kernel.bin") == 0) {
+            model->synthesis_syn.conv_3.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 4) {
+                model->synthesis_syn.conv_3.kH = dims[0];
+                model->synthesis_syn.conv_3.kW = dims[1];
+                model->synthesis_syn.conv_3.C_in = dims[2];
+                model->synthesis_syn.conv_3.C_out = dims[3];
+            }
+            model->synthesis_syn.conv_3.stride = 1;
+        } else if (strcmp(filename, "synthesis_conv_3_bias.bin") == 0) {
+            model->synthesis_syn.conv_3.bias = data_ptr;
+            model->synthesis_syn.conv_3.has_bias = 1;
+        }
+
+        // 5. Spectral Synthesis (Inversa)
+        else if (strcmp(filename, "spectral_synthesis_kernel.bin") == 0) {
+            model->spectral_syn.dense.kernel = data_ptr;
+            size_t dims[4], nd=0; if (parse_shape_dims(shape_str, dims, 4, &nd) == 0 && nd == 2) {
+                model->spectral_syn.dense.C_in = dims[0];
+                model->spectral_syn.dense.C_out = dims[1];
+            }
+        }
+
         else {
             // Si el TSV tiene un peso que no conocemos, lo liberamos para evitar fugas
             fprintf(stderr, "Aviso: Peso '%s' no mapeado. Liberando memoria.\n", filename);
@@ -434,6 +530,25 @@ void free_model_weights(SORTENY_Model* model) {
     free(model->modulating_mod.dense_0.bias);
     free(model->modulating_mod.dense_1.kernel);
     free(model->modulating_mod.dense_1.bias);
+
+    // 4. Synthesis
+    free(model->synthesis_syn.conv_0.kernel);
+    free(model->synthesis_syn.conv_0.bias);
+    free(model->synthesis_syn.igdn_0.beta);
+    free(model->synthesis_syn.igdn_0.gamma);
+    free(model->synthesis_syn.conv_1.kernel);
+    free(model->synthesis_syn.conv_1.bias);
+    free(model->synthesis_syn.igdn_1.beta);
+    free(model->synthesis_syn.igdn_1.gamma);
+    free(model->synthesis_syn.conv_2.kernel);
+    free(model->synthesis_syn.conv_2.bias);
+    free(model->synthesis_syn.igdn_2.beta);
+    free(model->synthesis_syn.igdn_2.gamma);
+    free(model->synthesis_syn.conv_3.kernel);
+    free(model->synthesis_syn.conv_3.bias);
+
+    // 5. Spectral Synthesis
+    free(model->spectral_syn.dense.kernel);
 
     // Finalmente, liberar la estructura principal
     free(model);

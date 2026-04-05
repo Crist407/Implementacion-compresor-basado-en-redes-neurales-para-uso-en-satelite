@@ -42,6 +42,17 @@ float* load_image_bsq_u16_to_planar_f32_ex(const char* filename, int B, int H, i
  */
 int save_tensor_planar_f32(const char* filename, const float* tensor, int C, int H, int W);
 
+/**
+ * @brief Guarda una imagen planar (B x H x W) como RAW BSQ uint16.
+ * @param filename Ruta de salida .raw
+ * @param tensor Tensor float en formato planar
+ * @param B Bandas
+ * @param H Altura
+ * @param W Anchura
+ * @param use_half_even 1 para round half-to-even, 0 para roundf estándar
+ * @return 0 en éxito, -1 en error
+ */
+int save_image_bsq_u16_from_planar_f32(const char* filename, const float* tensor, int B, int H, int W, int use_half_even);
 #ifdef __cplusplus
 }
 #endif

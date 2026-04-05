@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <string.h> // strerror
+#include <math.h>
 
 /**
 * @brief Comprueba si la máquina es little-endian.
@@ -148,5 +149,61 @@ int save_tensor_planar_f32(const char* filename, const float* tensor, int C, int
         return -1;
     }
     
+    return 0;
+}
+
+static float round_half_even_local(float x) {
+    float n = floorf(x);
+    float diff = x - n;
+    if (diff > 0.5f) return n + 1.0f;
+    if (diff < 0.5f) return n;
+    long long ni = (long long)n;
+    return ((ni & 1LL) == 0LL) ? n : (n + 1.0f);
+}
+
+int save_image_bsq_u16_from_planar_f32(const char* filename, const float* tensor, int B, int H, int W, int use_half_even) {
+    if (!filename || !tensor || B <= 0 || H <= 0 || W <= 0) {
+        fprintf(stderr, "Error [IO]: argumentos inválidos en save_image_bsq_u16_from_planar_f32\n");
+        return -1;
+    }
+
+    size_t total_elements = (size_t)B * H * W;
+    uint16_t* out = (uint16_t*)malloc(total_elements * sizeof(uint16_t));
+    if (!out) {
+        fprintf(stderr, "Error [IO]: malloc falló en save_image_bsq_u16_from_planar_f32\n");
+        return -1;
+    }
+
+    if (use_half_even) {
+        for (size_t i = 0; i < total_elements; ++i) {
+            float r = round_half_even_local(tensor[i]);
+            if (r < 0.0f) r = 0.0f;
+            if (r > 65535.0f) r = 65535.0f;
+            out[i] = (uint16_t)lrintf(r);
+        }
+    } else {
+        for (size_t i = 0; i < total_elements; ++i) {
+            float r = roundf(tensor[i]);
+            if (r < 0.0f) r = 0.0f;
+            if (r > 65535.0f) r = 65535.0f;
+            out[i] = (uint16_t)lrintf(r);
+        }
+    }
+
+    FILE* f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Error [IO]: No se pudo abrir archivo de salida RAW: %s\n", filename);
+        free(out);
+        return -1;
+    }
+
+    size_t written = fwrite(out, sizeof(uint16_t), total_elements, f);
+    fclose(f);
+    free(out);
+
+    if (written != total_elements) {
+        fprintf(stderr, "Error [IO]: Escritura incompleta RAW: %s\n", filename);
+        return -1;
+    }
     return 0;
 }

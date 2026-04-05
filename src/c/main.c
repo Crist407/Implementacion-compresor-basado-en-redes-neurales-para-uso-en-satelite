@@ -115,6 +115,8 @@ int main(int argc, char* argv[]) {
     float* gdn0_all = NULL;
     float* gdn1_all = NULL;
     float* gdn2_all = NULL;
+    int32_t* band_q_i32 = NULL;
+    FILE* f_out = NULL;
 
     // Modo de paridad estricta: fuerza half-to-even y ejecución determinista
     const char* strict_env = getenv("STRICT_PARITY");
@@ -204,8 +206,10 @@ int main(int argc, char* argv[]) {
            input_lambda[0], modulator[0], modulator[100]);
     
     // Preparar salida en streaming
-    FILE* f_out = fopen(output_file, "wb");
+    f_out = fopen(output_file, "wb");
     if (!f_out) { fprintf(stderr, "Error: no se pudo abrir '%s' para escritura.\n", output_file); goto cleanup; }
+    // Buffer de salida grande para reducir llamadas al sistema.
+    setvbuf(f_out, NULL, _IOFBF, 1 << 20);
 
     // Cabecera estilo Python: 5 x uint16 (bands, height, width, datatype, num_filters)
     uint16_t header[5];
@@ -256,6 +260,12 @@ int main(int argc, char* argv[]) {
     const char* use_half_even_env = getenv("USE_HALF_EVEN");
     int use_half_even = strict_parity ? 1 : (use_half_even_env && use_half_even_env[0] == '1');
     size_t plane_sz = (size_t)H_Y * W_Y;
+    size_t band_latent_elems = (size_t)C3_AN * plane_sz;
+    band_q_i32 = (int32_t*)malloc(band_latent_elems * sizeof(int32_t));
+    if (!band_q_i32) {
+        fprintf(stderr, "Error: No se pudo alocar memoria para buffer de latentes int32.\n");
+        goto cleanup;
+    }
 
     for (int b = 0; b < BANDS; b++) {
         const float* band_input_raw = spectral_out + (b * H_IN * W_IN);
@@ -317,29 +327,22 @@ int main(int argc, char* argv[]) {
             size_t plane_off = c * plane_sz;
             for (size_t p = 0; p < plane_sz; p++) {
                 float prod = band_Y[plane_off + p] * M_val;
+                float qv_f = 0.0f;
                 if (use_half_even) {
                     float _n = floorf(prod);
                     float _diff = prod - _n;
-                    float r_he = (_diff > 0.5f) ? (_n + 1.0f) : (_diff < 0.5f ? _n : ((fmodf(_n, 2.0f) == 0.0f) ? _n : (_n + 1.0f)));
-                    band_Y[plane_off + p] = r_he;
+                    qv_f = (_diff > 0.5f) ? (_n + 1.0f) : (_diff < 0.5f ? _n : ((((int64_t)_n & 1LL) == 0LL) ? _n : (_n + 1.0f)));
                 } else {
-                    band_Y[plane_off + p] = roundf(prod);
+                    qv_f = roundf(prod);
                 }
+                band_q_i32[plane_off + p] = (int32_t)lrintf(qv_f);
             }
-
         }
 
-        // Cuantizar con la escala del modulador
-        // Escribir banda cuantizada como int32 en orden (band, channel, h, w)
-        for (size_t c = 0; c < C3_AN; c++) {
-            size_t plane_off = c * plane_sz;
-            for (size_t p = 0; p < plane_sz; p++) {
-                int32_t qv = (int32_t)lrintf(band_Y[plane_off + p]);
-                if (fwrite(&qv, sizeof(int32_t), 1, f_out) != 1) {
-                    fprintf(stderr, "Error: escritura incompleta en salida (banda %d, canal %zu)\n", b, c);
-                    fclose(f_out); f_out=NULL; goto cleanup;
-                }
-            }
+        // Escribir toda la banda cuantizada en un solo bloque
+        if (fwrite(band_q_i32, sizeof(int32_t), band_latent_elems, f_out) != band_latent_elems) {
+            fprintf(stderr, "Error: escritura incompleta en salida (banda %d)\n", b);
+            fclose(f_out); f_out=NULL; goto cleanup;
         }
     }
 
@@ -373,6 +376,7 @@ cleanup:
     if (mod_hidden) free(mod_hidden);
     if (modulator) free(modulator);
     if (band_normalized) free(band_normalized);
+    if (band_q_i32) free(band_q_i32);
 
     return ret;
 }

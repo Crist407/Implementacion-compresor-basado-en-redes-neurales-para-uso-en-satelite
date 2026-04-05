@@ -43,34 +43,52 @@ ifeq ($(RPI_ARCH),rpi4)
   CFLAGS += -mcpu=cortex-a72 -mtune=cortex-a72 -DUSE_NEON
 endif
 
-TARGET = sorteny_compressor
+# --- Directorios y fuentes comunes ---
 SRC_DIR = src/c
-SRCS = \
-  $(SRC_DIR)/main.c \
+COMMON_SRCS = \
   $(SRC_DIR)/sorteny_model.c \
   $(SRC_DIR)/sorteny_layers.c \
   $(SRC_DIR)/io_helpers.c
+
+# --- Compresor ---
+TARGET = sorteny_compressor
+SRCS = $(SRC_DIR)/main.c $(COMMON_SRCS)
 OBJS = $(SRCS:.c=.o)
 DEPS = $(OBJS:.o=.d)
 
-.PHONY: all clean distclean run rpi3 rpi4
+# --- Descompresor ---
+TARGET_DECOMP = sorteny_decompressor
+SRCS_DECOMP = $(SRC_DIR)/main_decompress.c $(COMMON_SRCS)
+OBJS_DECOMP = $(SRCS_DECOMP:.c=.o)
+DEPS_DECOMP = $(OBJS_DECOMP:.o=.d)
+
+.PHONY: all clean distclean run rpi3 rpi4 decompress
 
 # Permite usar '>' como prefijo de recetas en lugar de tabulador
 .RECIPEPREFIX := >
 
-all: $(TARGET)
+all: $(TARGET) $(TARGET_DECOMP)
 
 $(TARGET): $(OBJS)
 > @echo Enlazando: $@
 > $(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
+decompress: $(TARGET_DECOMP)
+
+$(TARGET_DECOMP): $(OBJS_DECOMP)
+> @echo Enlazando: $@
+> $(CC) $(CFLAGS) -o $@ $(OBJS_DECOMP) $(LDFLAGS)
+
 %.o: %.c
 > @echo Compilando: $<
 > $(CC) $(CFLAGS) -c $< -o $@
 
-# Ruta de pesos: usar el set minimal por defecto
+run_dec: $(TARGET_DECOMP)
+> ./$(TARGET_DECOMP) output/latent.bin output/reconstructed_c.raw weights/decoder 0.125
+
+# Default run shortcut
 run: $(TARGET)
-> ./$(TARGET) data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw 0.01 debug_dumps/Y_hat_c.bin weights/pesos_bin_minimal
+> ./$(TARGET) data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw 0.1 output/latent.bin weights/encoder 0.125
 
 # --- SHORTCUTS PARA RASPBERRY ---
 
@@ -82,8 +100,8 @@ rpi4:
 
 clean:
 > @echo Limpiando...
-> rm -f $(TARGET) $(OBJS) $(DEPS)
+> rm -f $(TARGET) $(TARGET_DECOMP) $(OBJS) $(OBJS_DECOMP) $(DEPS) $(DEPS_DECOMP)
 
 distclean: clean
 
--include $(DEPS)
+-include $(DEPS) $(DEPS_DECOMP)

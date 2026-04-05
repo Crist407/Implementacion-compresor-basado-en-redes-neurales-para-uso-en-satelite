@@ -23,6 +23,8 @@ Thumbs.db
 *.out
 build/
 sorteny_compressor
+sorteny_decompressor
+sorteny_decoder_ops_test
 
 # TensorBoard logs and TF events
 SORTENY_Sentinel2_model/logs/
@@ -31,6 +33,8 @@ SORTENY_Sentinel2_model/logs/
 # Debug and outputs
 debug_dumps/
 outputs/
+output/*
+!output/.gitkeep
 
 # Notebooks
 .ipynb_checkpoints/
