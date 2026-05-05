@@ -69,20 +69,25 @@ static float* allocate_tensor(size_t C, size_t H, size_t W, const char* name) {
     return ptr;
 }
 
+static int env_is_enabled(const char* name) {
+    const char* value = getenv(name);
+    return value && value[0] == '1';
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 4 || argc > 6) {
         fprintf(stderr, "Uso: %s <input_image.raw> <lambda> <output_Y_hat.bin> [model_dir] [max_lambda]\n", argv[0]);
-        fprintf(stderr, "Ej:   %s T31TCG_...raw 0.01 salida.bin [weights/pesos_bin] [0.05]\n", argv[0]);
+        fprintf(stderr, "Ej:   %s data/T31TCG_...raw 0.1 output/latent.bin weights/encoder 0.125\n", argv[0]);
         return 1;
     }
 
     const char* input_file = argv[1];
     float lambda = (float)atof(argv[2]);
     const char* output_file = argv[3];
-    const char* model_path = (argc >= 5) ? argv[4] : "weights/pesos_bin";
+    const char* model_path = (argc >= 5) ? argv[4] : "weights/encoder";
     /*
-     * max_lambda (opcional): si se proporciona (argc == 6) escalamos lambda -> lambda/max_lambda
-     * Esto permite normalizar el rango dinámico de lambdas antes de la ModulatingTransform.
+     * max_lambda (opcional): rango superior usado para recortar lambda y
+     * cuantizarla en el Q-map de 8 bits antes del ModulatingTransform.
      */
     float max_lambda = 0.0f;
     if (argc == 6) {
@@ -94,7 +99,7 @@ int main(int argc, char* argv[]) {
     } else {
         max_lambda = DEFAULT_MAX_LAMBDA;
     }
-    // Recorte y escalado alineado con Python: lambda en [0, max_lambda]
+    // Recorte alineado con Python/C: lambda en [0, max_lambda]
     if (lambda < 0.0f) lambda = 0.0f;
     if (lambda > max_lambda) lambda = max_lambda;
 
@@ -111,11 +116,6 @@ int main(int argc, char* argv[]) {
     int32_t* band_q_i32 = NULL;
     float* mod_hidden = NULL;
     float* modulator  = NULL;
-    // Buffers opcionales para volcados de etapas (conv0_pre/gdn0)
-    float* conv0_pre_all = NULL;
-    float* gdn0_all = NULL;
-    float* gdn1_all = NULL;
-    float* gdn2_all = NULL;
     FILE* f_out = NULL;
 
     // Modo de paridad estricta: fuerza half-to-even y ejecución determinista
@@ -153,15 +153,8 @@ int main(int argc, char* argv[]) {
     mod_hidden = allocate_tensor(MOD_HIDDEN, 1, 1, "mod_hidden");
     modulator  = allocate_tensor(MOD_OUT, 1, 1, "modulator (M)");
     
-    // Reservar buffers para volcados por etapas SOLO si se solicitan (DUMP_STAGES=1)
-    // Estos buffers pueden consumir mucha memoria adicional, usarlos solo para debug.
-    const char* dump_stages_env = getenv("DUMP_STAGES");
-    int do_stages = (dump_stages_env && dump_stages_env[0] == '1');
-    if (do_stages) {
-        conv0_pre_all = allocate_tensor(BANDS * C0, H1, W1, "conv0_pre_all");
-        gdn0_all = allocate_tensor(BANDS * C0, H1, W1, "gdn0_all");
-        gdn1_all = allocate_tensor(BANDS * C1, H2, W2, "gdn1_all");
-        gdn2_all = allocate_tensor(BANDS * C2, H3, W3, "gdn2_all");
+    if (env_is_enabled("DUMP_STAGES")) {
+        fprintf(stderr, "[WARN] DUMP_STAGES es legacy y no genera artefactos completos en el encoder actual; se ignora.\n");
     }
 
     if (!spectral_out || !scratch_a || !scratch_b || !band_Y || !mod_hidden || !modulator) {
@@ -227,21 +220,10 @@ int main(int argc, char* argv[]) {
     size_t qwritten = fwrite(q_map, sizeof(uint8_t), H4 * W4, f_out);
     if (qwritten != H4 * W4) { fprintf(stderr, "Error: escritura de Q incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
 
-    // Dumps opcionales en streaming
-    const char* dump_ypre_env = getenv("DUMP_Y_PRE");
-    const char* dump_debug_env = getenv("DEBUG_DUMP");
-    int do_dump_ypre = ((dump_ypre_env && dump_ypre_env[0] == '1') || (dump_debug_env && dump_debug_env[0] == '1'));
-    FILE* f_ypre = NULL;
-    if (do_dump_ypre) {
-        char p_ypre[256]; snprintf(p_ypre, sizeof(p_ypre), "%s/%s", DEBUG_DUMP_DIR, "Y_pre_c.bin");
-        f_ypre = fopen(p_ypre, "wb"); if (!f_ypre) fprintf(stderr, "[WARN] No se pudo abrir Y_pre_c.bin\n");
-    }
-    const char* dump_y_float_env = getenv("DUMP_Y_FLOAT");
-    int dump_y_float = (dump_y_float_env && dump_y_float_env[0] == '1');
-    FILE* f_yfloat = NULL;
-    if (dump_y_float) {
-        char p_yfloat[256]; snprintf(p_yfloat, sizeof(p_yfloat), "%s/%s", DEBUG_DUMP_DIR, "Y_float_c.bin");
-        f_yfloat = fopen(p_yfloat, "wb"); if (!f_yfloat) fprintf(stderr, "[WARN] No se pudo abrir Y_float_c.bin\n");
+    if (env_is_enabled("DEBUG_DUMP") || env_is_enabled("DUMP_SPECTRAL") ||
+        env_is_enabled("DUMP_Y_PRE") || env_is_enabled("DUMP_M") ||
+        env_is_enabled("DUMP_Y_FLOAT")) {
+        fprintf(stderr, "[WARN] Los volcados DUMP_* del encoder son legacy y no se emiten en la ruta optimizada actual.\n");
     }
 
     // Etapa 3: Analysis Transform (Bucle sobre las 8 bandas) + modulación y cuantización por banda
@@ -281,40 +263,21 @@ int main(int argc, char* argv[]) {
         apply_conv2d(scratch_a, band_normalized, &model->analysis_an.conv_0, H_IN, W_IN);
 
 
-        if (do_stages && conv0_pre_all) {
-            size_t sz = (size_t)C0 * (size_t)H1 * (size_t)W1;
-            memcpy(conv0_pre_all + (b * sz), scratch_a, sz * sizeof(float));
-        }
-        
         // 2. GDN 0: scratch_a -> scratch_b
         apply_gdn(scratch_b, scratch_a, &model->analysis_an.gdn_0, H1, W1);
         
 
-        
-        if (do_stages && gdn0_all) {
-            size_t sz = (size_t)C0 * (size_t)H1 * (size_t)W1;
-            memcpy(gdn0_all + (b * sz), scratch_b, sz * sizeof(float));
-        }
-        
         // 3. Capa 1: scratch_b -> scratch_a (Reutilizamos A)
         apply_conv2d(scratch_a, scratch_b, &model->analysis_an.conv_1, H1, W1);
         
         // 4. GDN 1: scratch_a -> scratch_b (Reutilizamos B)
         apply_gdn(scratch_b, scratch_a, &model->analysis_an.gdn_1, H2, W2);
-        if (do_stages && gdn1_all) {
-            size_t sz = (size_t)C1 * (size_t)H2 * (size_t)W2;
-            memcpy(gdn1_all + (b * sz), scratch_b, sz * sizeof(float));
-        }
         
         // 5. Capa 2: scratch_b -> scratch_a (Reutilizamos A)
         apply_conv2d(scratch_a, scratch_b, &model->analysis_an.conv_2, H2, W2);
         
         // 6. GDN 2: scratch_a -> scratch_b (Reutilizamos B)
         apply_gdn(scratch_b, scratch_a, &model->analysis_an.gdn_2, H3, W3);
-        if (do_stages && gdn2_all) {
-            size_t sz = (size_t)C2 * (size_t)H3 * (size_t)W3;
-            memcpy(gdn2_all + (b * sz), scratch_b, sz * sizeof(float));
-        }
         
         // 7. Layer 3 (Output): scratch_b -> band_Y (sin GDN, sin bias)
         apply_conv2d(band_Y, scratch_b, &model->analysis_an.conv_3, H3, W3);
@@ -355,16 +318,6 @@ int main(int argc, char* argv[]) {
     free(scratch_a); scratch_a = NULL;
     free(scratch_b); scratch_b = NULL;
     
-    // Liberar buffers de etapas si existen
-    if (conv0_pre_all) { free(conv0_pre_all); conv0_pre_all = NULL; }
-    if (gdn0_all) { free(gdn0_all); gdn0_all = NULL; }
-    if (gdn1_all) { free(gdn1_all); gdn1_all = NULL; }
-    if (gdn2_all) { free(gdn2_all); gdn2_all = NULL; }
-
-    // Cerrar ficheros de streaming
-    if (f_ypre) { fclose(f_ypre); f_ypre = NULL; }
-    if (f_yfloat) { fclose(f_yfloat); f_yfloat = NULL; }
-
     ret = 0;
 
 cleanup:

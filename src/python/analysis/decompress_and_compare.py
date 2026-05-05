@@ -5,7 +5,12 @@ Descompresión y comparación de resultados SORTENY
 Ejecutar en PC local con TensorFlow instalado
 
 Uso:
-    python decompress_and_compare.py <archivo.bin> [imagen_original.raw] [--model_dir models/ieec050]
+    python decompress_and_compare.py <archivo.bin> [--original imagen.raw]
+
+Nota:
+    La descompresion TensorFlow de este script es legacy y solo funciona con
+    modelos antiguos separados en subdirectorios synthesis/modulating/spectral.
+    Para la base actual usa el decoder C y validate_e2e.py.
 """
 
 import os
@@ -161,7 +166,7 @@ def main():
     parser = argparse.ArgumentParser(description='Descomprime y compara resultados SORTENY')
     parser.add_argument('compressed_file', help='Archivo .bin comprimido')
     parser.add_argument('--original', '-o', help='Imagen original .raw para comparación')
-    parser.add_argument('--model_dir', '-m', default='models/ieec050', help='Directorio del modelo')
+    parser.add_argument('--model_dir', '-m', default=None, help='Directorio legacy con synthesis/modulating/spectral')
     parser.add_argument('--output', help='Archivo de salida para imagen reconstruida')
     parser.add_argument('--compare', '-c', help='Segundo archivo .bin para comparar latentes')
     
@@ -194,7 +199,7 @@ def main():
             print(f"⚠️  Tamaños diferentes: {lat1.size} vs {lat2.size}")
     
     # Descomprimir si hay TensorFlow y modelo
-    if HAS_TF and os.path.isdir(args.model_dir):
+    if args.model_dir and HAS_TF and os.path.isdir(args.model_dir):
         print("\n" + "="*60)
         print(" DESCOMPRESIÓN")
         print("="*60)

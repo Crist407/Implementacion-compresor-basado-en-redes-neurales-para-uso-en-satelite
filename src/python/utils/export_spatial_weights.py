@@ -9,6 +9,11 @@ import os
 
 # Usar rutas relativas desde la raíz del proyecto
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if os.environ.get("SORTENY_RUN_LEGACY") != "1":
+    raise SystemExit(
+        "LEGACY: export_spatial_weights.py usa models/ieec050 separados. "
+        "Ejecuta con SORTENY_RUN_LEGACY=1 si necesitas ese flujo historico."
+    )
 output_dir = os.path.join(ROOT, "weights", "pesos_ieec050_spatial")
 os.makedirs(output_dir, exist_ok=True)
 

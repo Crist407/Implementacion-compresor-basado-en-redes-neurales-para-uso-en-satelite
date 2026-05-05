@@ -10,6 +10,12 @@
 
 set -e
 
+if [ "${SORTENY_RUN_LEGACY:-0}" != "1" ]; then
+    echo "LEGACY: este benchmark usa rutas y binarios historicos (sorteny_compress, pesos_ieec050_*)."
+    echo "Para reproducirlo bajo tu responsabilidad: SORTENY_RUN_LEGACY=1 $0"
+    exit 2
+fi
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTPUT_DIR="$HOME/benchmark_full_${TIMESTAMP}"
 mkdir -p "$OUTPUT_DIR"

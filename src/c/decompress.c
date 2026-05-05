@@ -137,13 +137,13 @@ static int ensure_spectral_synthesis(SORTENY_Model* model) {
 int main(int argc, char* argv[]) {
     if (argc < 3 || argc > 5) {
         fprintf(stderr, "Uso: %s <input.bin> <output.raw> [weights_dir] [max_lambda]\n", argv[0]);
-        fprintf(stderr, "Ej:   %s results/output_c.bin output/recon.raw weights/pesos_ieec050_decoder 0.125\n", argv[0]);
+        fprintf(stderr, "Ej:   %s output/latent.bin output/reconstructed.raw weights/decoder 0.125\n", argv[0]);
         return 1;
     }
 
     const char* input_bin = argv[1];
     const char* output_raw = argv[2];
-    const char* weights_dir = (argc >= 4) ? argv[3] : "weights/pesos_ieec050_decoder";
+    const char* weights_dir = (argc >= 4) ? argv[3] : "weights/decoder";
     float max_lambda = (argc >= 5) ? (float)atof(argv[4]) : DEFAULT_MAX_LAMBDA;
     if (max_lambda <= 0.0f) max_lambda = DEFAULT_MAX_LAMBDA;
     const char* strict_env = getenv("STRICT_PARITY");

@@ -4,6 +4,13 @@
 # Ejecutar desde el PC local
 # =============================================================================
 
+if [ "${SORTENY_RUN_LEGACY:-0}" != "1" ]; then
+    echo "LEGACY: este deploy prepara una estructura historica y genera un benchmark antiguo."
+    echo "El harness canonico de Progreso 1 debe recuperarse desde la Raspberry si se quiere versionar."
+    echo "Para reproducir este flujo historico bajo tu responsabilidad: SORTENY_RUN_LEGACY=1 $0"
+    exit 2
+fi
+
 # Configuración
 RASPBERRY_HOST="${RASPBERRY_HOST:-raspberry@158.109.79.167}"
 REMOTE_DIR="/home/raspberry/sorteny_benchmark"

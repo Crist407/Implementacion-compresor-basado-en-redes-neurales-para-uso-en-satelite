@@ -14,11 +14,11 @@ W4 = W // 16
 
 
 def main():
-    p = argparse.ArgumentParser(description="Generate latent bin using TF SavedModels (spectral/analysis/modulating)")
+    p = argparse.ArgumentParser(description="LEGACY: generate latent bin using split TF SavedModels (spectral/analysis/modulating)")
     p.add_argument("raw_path", type=Path)
     p.add_argument("model_root", type=Path)
     p.add_argument("out_bin", type=Path)
-    p.add_argument("--lambda_val", type=float, default=0.01)
+    p.add_argument("--lambda_val", type=float, default=0.1)
     args = p.parse_args()
 
     lambda_val = float(args.lambda_val)

@@ -95,12 +95,12 @@ typedef struct {
 // --- DECLARACIÓN DE FUNCIONES ---
 
 /**
- * @brief Carga todos los pesos del modelo desde la carpeta 'pesos_bin/'.
- * * Lee TSV para saber qué archivos cargar,
- * reserva memoria (malloc) para cada tensor en la estructura SORTENY_Model,
- * y lee los datos binarios de los archivos .bin.
+ * @brief Carga todos los pesos del modelo desde un directorio de pesos exportados.
  *
- * @param base_path Ruta a la carpeta 'pesos_bin/'.
+ * Lee weights_index.tsv para saber qué archivos cargar, reserva memoria para
+ * cada tensor en la estructura SORTENY_Model y lee los datos binarios .bin.
+ *
+ * @param base_path Ruta al directorio de pesos, por ejemplo weights/encoder o weights/decoder.
  * @return Un puntero al modelo cargado, o NULL si falla.
  */
 SORTENY_Model* load_model_weights(const char* base_path);

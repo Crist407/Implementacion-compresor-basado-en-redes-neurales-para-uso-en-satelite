@@ -100,12 +100,14 @@ def save_planar(path: Path, tensor: np.ndarray) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Dump Python-side spectral and analysis intermediates")
+    parser = argparse.ArgumentParser(description="LEGACY: dump Python-side intermediates from split SavedModels")
     parser.add_argument("raw_path", type=Path)
     parser.add_argument("weights_dir", type=Path)
     parser.add_argument("out_dir", type=Path, default=Path("debug_dumps"))
-    parser.add_argument("--model_root", type=Path, default=Path("Raspberry/sorteny/models/ieec050"))
+    parser.add_argument("--model_root", type=Path, default=None, help="Directorio legacy con subdirectorios spectral/analysis")
     args = parser.parse_args()
+    if args.model_root is None:
+        parser.error("--model_root es obligatorio para este flujo legacy de SavedModels separados")
 
     weights = load_weights(args.weights_dir)
 

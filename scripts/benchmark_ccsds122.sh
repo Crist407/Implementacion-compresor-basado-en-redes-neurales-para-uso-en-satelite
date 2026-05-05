@@ -7,6 +7,12 @@
 
 set -e
 
+if [ "${SORTENY_RUN_LEGACY:-0}" != "1" ]; then
+    echo "LEGACY: este benchmark usa CLI y pesos antiguos de SORTENY C."
+    echo "Para reproducirlo bajo tu responsabilidad: SORTENY_RUN_LEGACY=1 $0"
+    exit 2
+fi
+
 # Configuración
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 MHDC_DIR="$HOME/mhdc_source_code_20210208"

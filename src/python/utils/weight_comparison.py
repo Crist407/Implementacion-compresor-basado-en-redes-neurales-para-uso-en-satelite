@@ -8,7 +8,7 @@ import tensorflow_compression as tfc
 from typing import Tuple, Dict, Any, List
 
 MODEL_DIR = "models/SORTENY_Sentinel2_model"
-WEIGHTS_DIR = "weights/pesos_bin"
+WEIGHTS_DIR = "weights/encoder"
 INDEX_TSV = os.path.join(WEIGHTS_DIR, "weights_index.tsv")
 
 np.set_printoptions(suppress=True, linewidth=120)

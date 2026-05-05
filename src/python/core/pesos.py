@@ -31,7 +31,7 @@ except Exception as e:
 
 # --- Configuración ---
 MODEL_DIR = "models/SORTENY_Sentinel2_model"  
-OUTPUT_DIR = "weights/pesos_bin"  # Puede ser sobrescrito por argumentos CLI
+OUTPUT_DIR = "weights/encoder"  # Puede ser sobrescrito por argumentos CLI
 BIT_LENGTH = 16                         
 EXPECTED_TF_PREFIX = "2.14." 
 EXPECTED_TFC_PREFIX = "2.14." 
@@ -179,7 +179,7 @@ def ensure_dir(path: str) -> None:
 WEIGHTS_META: List[Dict[str, Any]] = []  # Registro de metadatos acumulados
 
 # Guarda un tensor en binario float32 y añade metadatos al índice global.
-# Ejemplo de uso: save_tensor_to_bin(tensor, "nombre.bin", out_dir="pesos_bin/")
+# Ejemplo de uso: save_tensor_to_bin(tensor, "nombre.bin", out_dir="weights/encoder")
 def save_tensor_to_bin(t: tf.Tensor, filename: str, out_dir: Optional[str] = None) -> None:
     if out_dir is None:
         out_dir = OUTPUT_DIR  # Usar valor global actual
@@ -393,7 +393,7 @@ def main():
     global MODEL_DIR, OUTPUT_DIR
     parser = argparse.ArgumentParser(description="Extracción de pesos SORTENY")
     parser.add_argument("--model-dir", default=MODEL_DIR, help="Ruta al SavedModel")
-    parser.add_argument("--outdir", default=None, help="Directorio destino de pesos (por defecto auto según --minimal)")
+    parser.add_argument("--outdir", default=None, help="Directorio destino de pesos (por defecto weights/encoder)")
     parser.add_argument("--minimal", action="store_true", help="Extrae sólo spectral, analysis y modulating (omitiendo hyper análisis)")
     args = parser.parse_args()
 
@@ -401,7 +401,7 @@ def main():
     if args.outdir:
         OUTPUT_DIR = args.outdir
     else:
-        OUTPUT_DIR = "weights/pesos_bin_minimal" if args.minimal else "weights/pesos_bin"
+        OUTPUT_DIR = "weights/encoder"
     # Verificación de versiones antes de continuar
     try:
         check_versions()

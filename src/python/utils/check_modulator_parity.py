@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import os
 from pathlib import Path
 
 BANDS = 8
@@ -57,11 +58,15 @@ def mod_forward_numpy(lambda_quant: float, k0, b0, k1, b1):
 
 
 def main():
-    weights_dir = Path("weights/pesos_ieec050_k5x3")
+    if os.environ.get("SORTENY_RUN_LEGACY") != "1":
+        print("LEGACY: check_modulator_parity.py usa SavedModels separados antiguos. Ejecuta con SORTENY_RUN_LEGACY=1 si necesitas ese flujo.")
+        return 2
+
+    weights_dir = Path("weights/encoder")
     model_root = Path("Raspberry/sorteny/models/ieec050")
 
     # lambda
-    lambda_val = 0.01
+    lambda_val = 0.1
     q_byte = int(np.rint((lambda_val / MAX_LAMBDA) * 255.0))
     lambda_quant = (q_byte / 255.0) * MAX_LAMBDA
     print(f"lambda={lambda_val}, q_byte={q_byte}, lambda_quant={lambda_quant}")
@@ -127,4 +132,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -4,6 +4,13 @@
 # Ejecutar desde el PC local
 # =============================================================================
 
+if [ "${SORTENY_RUN_LEGACY:-0}" != "1" ]; then
+    echo "LEGACY: este script apunta al arbol remoto historico /home/raspberry/sorteny_benchmark."
+    echo "Los resultados canonicos de Progreso 1 no estan versionados en este repo."
+    echo "Para usar este flujo historico bajo tu responsabilidad: SORTENY_RUN_LEGACY=1 $0"
+    exit 2
+fi
+
 # Configuración
 RASPBERRY_HOST="${RASPBERRY_HOST:-raspberry@158.109.79.167}"
 REMOTE_RESULTS="/home/raspberry/sorteny_benchmark/results"

@@ -1,241 +1,247 @@
-# SORTENY: Compresor/Descompresor de Imágenes Satelitales Sentinel-2
+# SORTENY C: Compresor y Descompresor de Imagenes Sentinel-2
 
-Implementación en C puro del pipeline completo de compresión y descompresión SORTENY, optimizado intensamente para dispositivos embebidos (Raspberry Pi). Logra una **paridad exacta garantizada de ~76 dB** con respecto a su modelo de referencia en TensorFlow.
+Implementacion en C11 del pipeline SORTENY para comprimir y descomprimir imagenes satelitales Sentinel-2 RAW BSQ `uint16`. La base actual incluye encoder C, decoder C, pesos exportados y utilidades Python de validacion.
 
-> **Trabajo de Fin de Grado** - Grado en Ingeniería Informática  
-> Cristhian Omar Añez López · Universitat Autònoma de Barcelona · 2025
+> Trabajo de Fin de Grado - Grado en Ingenieria Informatica
+> Cristhian Omar Anez Lopez · Universitat Autonoma de Barcelona · 2025/2026
 
-## Descripción
+## Estado Actual
 
-Este proyecto implementa el codificador y el decodificador de la red neuronal SORTENY (desarrollada originalmente en TensorFlow por el IEEC). Se reescribió la inferencia en C 11 sin dependencias de terceros para correr fluidamente en satélites y dispositivos con recursos mínimos.
+- Pipeline C completo: compresion, bitstream latente, descompresion y reconstruccion RAW.
+- Plataforma oficial de benchmark: Raspberry Pi 3B+ con Raspberry Pi OS 64-bit.
+- Configuracion canonica actual: imagen `8 x 512 x 512`, `lambda=0.1`, `max_lambda=0.125`.
+- Pesos C versionados:
+  - encoder: `weights/encoder`
+  - decoder: `weights/decoder`
+- La codificacion entropica del latente sigue pendiente; el bitstream actual guarda Q-map y latentes `int32` sin codificador entropico final.
 
-Estructura central:
-- Encoder y Decoder íntegros en C con optimizaciones matriciales y SIMD/NEON para ARM.
-- Paridad matemática (*half-to-even rounding* y *bitwise transforms*).
-- Uso intensivo del stack en capas GDN e IGDN minimizando el impacto de malloc.
+Los resultados vigentes proceden de Progreso 1. Los informes `docs/informes/Entrega Final.tex` y `docs/presentacion/Presentacion.tex` son documentos historicos de fases anteriores y no son la fuente canonica de esta base.
 
-## Estructura del Proyecto
+## Estructura
 
-```
-├── src/
-│   ├── c/                      # Implementación C
-│   │   ├── main.c              # Compresor (Encoder)
-│   │   ├── main_decompress.c   # Descompresor (Decoder)
-│   │   ├── sorteny_layers.c    # Capas: Conv2D, GDN, IGDN, Dense, ReLU
-│   │   ├── sorteny_model.c     # Parámetros y fallback de pesos
-│   │   └── io_helpers.c        # Lectura y manipulación BSQ/planar flotante
-│   │
-│   └── python/                 # Lógica de Python (Scripts de apoyo y validación)
-│       ├── core/               # Lógica principal
-│       │   ├── validar_python.py   # Validador de referencia TensorFlow
-│       │   ├── pesos.py            # Extracción de pesos del modelo
-│       │   └── pesos_ieec.py       # Extracción modelo ieec050
-│       ├── benchmark/          # Scripts de rendimiento
-│       ├── analysis/           # Comparación C vs Python
-│       ├── utils/              # Utilidades diversas
-│       └── reference/          # Código original IEEC (SORTENY.py)
-│
-├── scripts/                    # Scripts bash (benchmark, deploy)
-├── models/                     # Modelos TensorFlow SavedModel
-├── weights/                    # Pesos exportados (float32 binarios)
-├── data/                       # Imágenes de prueba (RAW BSQ u16)
-├── docs/                       # Documentación e informes
+```text
+src/c/
+  main.c              Encoder C
+  decompress.c        Decoder C
+  sorteny_layers.c    Conv2D, GDN, IGDN, Dense, ReLU y operadores auxiliares
+  sorteny_model.c     Carga/liberacion de pesos exportados
+  io_helpers.c        Lectura/escritura RAW BSQ y conversiones
+
+src/python/
+  core/               Extraccion de pesos y referencia TensorFlow historica
+  analysis/           Validacion end-to-end y comparaciones
+  benchmark/          Benchmarks locales ligeros; no sustituyen al harness de Raspberry
+  reference/          Codigo SORTENY original de referencia
+
+weights/
+  encoder/            Pesos usados por sorteny_compressor
+  decoder/            Pesos usados por sorteny_decompressor
+
+scripts/
+  rpi_sys_probe.sh    Perfil de sistema Raspberry
+  *.sh                Scripts historicos marcados como legacy si usan rutas antiguas
 ```
 
 ## Requisitos
 
-### Sistema
-- Linux (probado en Ubuntu 22.04 y Raspberry Pi OS 64-bit)
-- GCC con soporte C11
-- Make
+- Linux.
+- GCC con C11, `make` y `libm`.
+- OpenMP opcional para modo rapido.
+- Python 3.9+ solo para validacion y analisis.
 
-### Para compilación ARM (Raspberry Pi)
-- GCC con soporte NEON (automático en aarch64)
-
-### Para validación Python
-- Python 3.9+
-- Dependencias: `pip install -r requirements.txt`
-  - tensorflow==2.14.1
-  - tensorflow-compression==2.14.1
-  - numpy>=1.26,<2.0
-
-## Inicio Rápido
-
-### 1. Compilar el encoder C
+Dependencias Python:
 
 ```bash
-# Compilación release (optimizado)
-make clean && make MODE=release
-
-# Para Raspberry Pi (auto-detecta arquitectura)
-make clean && make MODE=release
+pip install -r requirements.txt
 ```
 
-### 2. Ejecutar el encoder
-
-### 2. Ejecutar el pipeline (Enlace y Desenlace)
+## Compilacion
 
 ```bash
-# Comprimir:
-./sorteny_compressor <imagen_original.raw> <lambda> <latente.bin> [dir_pesos_encoder] [max_lambda]
-
-# Ejemplo:
-./sorteny_compressor data/T31TCG_20230907...raw 0.1 output/latent.bin weights/encoder 0.125
-
-# Descomprimir:
-./sorteny_decompressor <latente.bin> <imagen_reconstruida.raw> [dir_pesos_decoder] [max_lambda]
-
-# Ejemplo:
-./sorteny_decompressor output/latent.bin output/reconstructed.raw weights/decoder 0.125
+make clean
+make MODE=release OMP=1
 ```
 
-### 3. Validar contra Python (opcional)
+Variables utiles del `Makefile`:
+
+| Variable | Uso |
+|---|---|
+| `MODE=release` | Build optimizado y conservador para paridad numerica |
+| `MODE=release_fast` | Build mas agresivo; no es el perfil canonico de Progreso 1 |
+| `OMP=1` | Compila con OpenMP |
+| `RPI_ARCH=rpi3` | Fuerza flags para Raspberry Pi 3B+ |
+| `BENCH_THREADS=4` | Numero de hilos para `make run_fast` |
+
+Targets utiles:
 
 ```bash
-# Activar entorno virtual
-source .venv/bin/activate
-
-# Generar ground truth
-python src/python/core/validar_python.py
-
-# Comparar salidas
-python src/python/analysis/compare_products.py --C debug_dumps --PY debug_dumps
+make run          # solo encoder
+make run_dec      # decoder sobre output/latent.bin
+make run_pipeline # encoder + decoder
+make run_parity   # pipeline con STRICT_PARITY=1
+make run_fast     # pipeline con OMP_NUM_THREADS=4 por defecto
+make test_ops     # tests unitarios de operadores decoder
 ```
 
-## Compilación
+## Uso C
 
-### Modos de compilación
+Comprimir:
 
 ```bash
-# Release (optimizado para producción)
-make MODE=release
-
-# Debug (con símbolos para depuración)
-make MODE=debug
+./sorteny_compressor \
+  data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  0.1 \
+  output/latent.bin \
+  weights/encoder \
+  0.125
 ```
 
-### Opciones del Makefile
+Descomprimir:
 
-| Variable | Descripción |
-|----------|-------------|
-| `MODE=release\|debug` | Nivel de optimización |
-| `OMP=1` | Habilitar OpenMP |
-| `RPI_ARCH=rpi3\|rpi4` | Optimizar para Raspberry Pi específica |
-
-## Variables de Entorno
-
-### Modo de ejecución
-
-| Variable | Descripción |
-|----------|-------------|
-| `STRICT_PARITY=1` | Modo determinista + redondeo half-to-even |
-| `USE_HALF_EVEN=1` | Redondeo half-to-even (como tf.round) |
-
-### Volcados de debug
-
-| Variable | Archivo generado |
-|----------|-----------------|
-| `DUMP_SPECTRAL=1` | spectral_c.bin |
-| `DUMP_STAGES=1` | conv0_pre_c.bin, gdn0_c.bin, etc. |
-| `DUMP_Y_PRE=1` | Y_pre_c.bin |
-| `DUMP_M=1` | M_c.bin |
-| `DUMP_Y_FLOAT=1` | Y_float_c.bin |
-
-## Arquitectura del Encoder
-
-```
-Imagen RAW (8 bandas × 512×512)
-           │
-           ▼
-┌─────────────────────┐
-│ Transformada        │
-│ Espectral (8×8)     │
-└─────────────────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Analysis Transform  │
-│ Conv2D 5×5 + GDN ×4 │
-│ (stride=2 cada capa)│
-└─────────────────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Modulating Transform│
-│ Dense + ReLU        │
-│ (escala según λ)    │
-└─────────────────────┘
-           │
-           ▼
-Latente cuantizado (8 × 384 × 32×32)
-           │
-           ▼
-┌─────────────────────┐
-│ Modulating Inverse  │
-│ Dense + ReLU        │
-└─────────────────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Synthesis Transform │
-│ IGDN ×3 + Conv2D 5×5│
-│ (Upsampling x2)     │
-└─────────────────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Transformada        │
-│ Espectral Inversa   │
-└─────────────────────┘
-           │
-           ▼
-Imagen Reconstruida RAW BSQ
+```bash
+./sorteny_decompressor \
+  output/latent.bin \
+  output/reconstructed.raw \
+  weights/decoder \
+  0.125
 ```
 
-## Notas Técnicas
+Los directorios de pesos son opcionales porque los binarios usan por defecto `weights/encoder` y `weights/decoder`.
 
-### Convolución
-- Semántica de correlación (como TensorFlow)
-- Padding `same_zeros` de SignalConv2D
-- Kernels 5×5 con stride 2
+## Modos de Ejecucion
 
-### GDN (Generalized Divisive Normalization)
-- Implementación exacta de tensorflow-compression
-- Fórmula: `y = x / (beta + sum(gamma * |x|))`
-- alpha=1, epsilon=1
+| Modo | Comando | Uso |
+|---|---|---|
+| Paridad | `STRICT_PARITY=1 ./sorteny_compressor ...` | Determinismo y redondeo half-to-even con 1 hilo |
+| Fast Pi 3B+ | `OMP_NUM_THREADS=4 ./sorteny_compressor ...` | Perfil recomendado de rendimiento en Raspberry Pi 3B+ |
 
-### Redondeo
-- Por defecto: `roundf` (half-away-from-zero)
-- Con `USE_HALF_EVEN=1`: half-to-even (como tf.round)
+`lambda` se recorta a `[0, max_lambda]`, se cuantiza a 8 bits en el Q-map y se reconstruye durante la descompresion. Para los benchmarks oficiales se usa `lambda=0.1` y `max_lambda=0.125`.
 
-## Benchmarks Oficiales (Raspberry Pi 4)
+Las variables `DUMP_*` del encoder (`DUMP_Y_PRE`, `DUMP_M`, `DUMP_Y_FLOAT`, `DUMP_STAGES`, `DUMP_SPECTRAL`) son legacy. La ruta optimizada actual no promete esos volcados como interfaz estable y el binario los ignora con aviso.
 
-Resultados de la validación end-to-end (Compresión + Descompresión) ejecutados directamente sobre una placa **Raspberry Pi 4 (4GB)**, utilizando la imagen de prueba de *512×512×8 bandas* y `lambda=0.1`.
+## Arquitectura Implementada
 
-| Métrica | C (OpenMP - 4 hilos) | Python TensorFlow |
-|---------|------------|-------------------|
-| **Velocidad Compresión** | **193.31 s** | 547.79 s |
-| **Velocidad Descompresión**| **159.70 s** | 578.64 s |
-| **Tiempo Total Pipeline** | **353.01 s** | 1126.43 s |
-| **Consumo Máximo de RAM** | **~135 MB** | ~816 MB |
-| **PSNR vs Imagen Original**| **76.73 dB** | 76.73 dB |
-| **Fidelidad C vs Python** | **105.41 dB (PSNR)** | - |
+Encoder:
 
-### Conclusiones de Rendimiento:
-- **Speedup de Tiempo:** La implementación optimizada en C es **3.19× veces más rápida** que el framework base de TensorFlow corriendo en la placa ARM (pasando de casi 19 minutos a menos de 6 minutos en el proceso completo).
-- **Ahorro de Memoria:** Reduce la huella en memoria dramáticamente (de 816 MB a tan solo 135 MB reales), habilitando ejecuciones concurrentes o en hardware satelital de recursos altamente limitados.
-- **Calidad Conservada (Pixel-Perfect):** Ambos decompressors devuelven exactamente *105.41 dB* de similitud entre ellos, con diferencias triviales de redondeo originadas por NEON. Funcionalmente, la calidad es idéntica a la red pre-entrenada por el IEEC.
+```text
+RAW BSQ uint16 (8 x 512 x 512)
+  -> transformada espectral 8x8
+  -> normalizacion por banda
+  -> analysis transform espacial:
+       conv0 + GDN
+       conv1 + GDN
+       conv2 + GDN
+       conv3 sin GDN final
+  -> modulating transform segun lambda cuantizada
+  -> cuantizacion half-even opcional
+  -> bitstream: cabecera + Q-map + latentes int32
+```
+
+Decoder:
+
+```text
+bitstream
+  -> lectura de cabecera, Q-map y latentes
+  -> reconstruccion de lambda cuantizada
+  -> desmodulacion
+  -> synthesis transform espacial con IGDN
+  -> transformada espectral inversa
+  -> clamp + cast a uint16
+  -> RAW BSQ reconstruido
+```
+
+La GDN/IGDN C sigue la forma implementada por los pesos exportados usados en esta base: `beta + sum(gamma * abs(x))`, con division en GDN y multiplicacion en IGDN.
+
+## Benchmarks Oficiales en Raspberry Pi 3B+
+
+Fuente canonica: Progreso 1, ejecutado en Raspberry Pi 3B+ sobre `T31TCG_20230907T104629_5.8_512_512_2_1_0.raw`, `lambda=0.1`, `max_lambda=0.125`, 3 repeticiones + 1 warmup.
+
+| Metrica | Baseline C, 1 hilo | Fast C, OpenMP 4 hilos |
+|---|---:|---:|
+| Compresion media | 542.9492 s | 193.3121 s |
+| Descompresion media | 401.4604 s | 159.7029 s |
+| Total medio | 944.4096 s | 353.0149 s |
+| PSNR vs original | 76.7255 dB | 76.7255 dB |
+| MAE vs original | 6.8350 | 6.8350 |
+| CPU media compresion | 100.5061 % | 293.1598 % |
+| CPU media descompresion | 100.4733 % | 260.0170 % |
+| RAM pico descompresion | 134.6641 MB | 135.6953 MB |
+| Hilos maximos observados | 1 | 4 |
+
+Speedups del modo fast:
+
+| Comparativa | Valor |
+|---|---:|
+| Compresion baseline/fast | 2.8087x |
+| Descompresion baseline/fast | 2.5138x |
+| Total baseline/fast | 2.6753x |
+| Reduccion de tiempo total | 62.62 % |
+
+Comparativa contra Python de referencia sin codificador entropico:
+
+| Metrica | C fast | Python |
+|---|---:|---:|
+| Compresion | 193.3121 s | 547.79 s |
+| Descompresion | 159.7029 s | 578.64 s |
+| Total | 353.0149 s | 1126.43 s |
+
+Speedup C fast vs Python: `2.8337x` en compresion, `3.6232x` en descompresion y `3.1909x` en total.
+
+## Paridad C vs Python
+
+| Metrica | Valor |
+|---|---:|
+| Tamano bitstream C | 12,583,946 bytes |
+| Tamano bitstream Python | 12,583,946 bytes |
+| Bytes diferentes en bitstream | 412 |
+| Primer byte distinto | offset 17,278 (`C=73`, `PY=74`) |
+| PSNR recon C vs recon Python | 105.4077 dB |
+| MSE recon C vs recon Python | 0.1236453 |
+| MAE recon C vs recon Python | 0.0713868 |
+| Max abs diff | 8 |
+| Pixeles identicos | 94.5585 % |
+
+Interpretacion: las reconstrucciones son muy proximas y conservan la calidad frente al original, pero no son pixel-perfect. Las diferencias son coherentes con redondeo y orden de operaciones entre implementaciones.
+
+## Validacion Local
+
+Smoke test recomendado:
+
+```bash
+make clean && make MODE=release OMP=1
+make run_pipeline
+python3 src/python/analysis/validate_e2e.py \
+  data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  output/reconstructed.raw \
+  --lmbda 0.1 \
+  --max-lambda 0.125
+make test_ops
+```
+
+Comprobaciones estaticas:
+
+```bash
+gcc -Wall -Wextra -std=c11 -fopenmp -fsyntax-only src/c/*.c
+python3 -m py_compile $(find src/python scripts -name '*.py')
+bash -n scripts/*.sh scripts/raspberry/*.sh 2>/dev/null || true
+```
+
+## Scripts y Artefactos de Raspberry
+
+Los informes de Progreso 1 mencionan `scripts/raspberry/run_benchmark.sh` y `scripts/raspberry/benchmark_pipeline.py`, pero esas fuentes no estan versionadas actualmente en este repo. Si se recuperan por SSH desde la Raspberry, deben entrar en `scripts/raspberry/` junto con los artefactos de evidencia o sus resumenes.
+
+Los scripts antiguos de `scripts/` que usan `sorteny_compress`, `pesos_ieec050_*`, `models/ieec050` o arboles remotos historicos estan marcados como legacy y no se ejecutan salvo con `SORTENY_RUN_LEGACY=1`.
 
 ## Licencia
 
-Este proyecto es parte de un Trabajo de Fin de Grado. Consultar con el autor antes de usar.
+Este proyecto forma parte de un Trabajo de Fin de Grado. Consultar con el autor antes de reutilizarlo.
 
 ## Agradecimientos
 
-- Institut d'Estudis Espacials de Catalunya (IEEC) - Modelo SORTENY original
-- Universitat Autònoma de Barcelona - Supervisión académica
-- En especial al Doctor Sebastià Mijares i Verdú por la posibilidad de realizar este proyecto
+- Institut d'Estudis Espacials de Catalunya (IEEC), modelo SORTENY original.
+- Universitat Autonoma de Barcelona, supervision academica.
+- Dr. Sebastia Mijares i Verdu, por la direccion y apoyo del proyecto.
 
 ## Contacto
 
-Cristhian Omar Añez Lopez - 1635157@uab.cat
+Cristhian Omar Anez Lopez - 1635157@uab.cat

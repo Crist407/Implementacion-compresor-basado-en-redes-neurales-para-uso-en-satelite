@@ -8,13 +8,14 @@ import sys
 import time
 from typing import List, Tuple
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 PY_EXE_DEFAULT = os.path.join(ROOT, ".venv", "bin", "python")
-PY_VALIDATOR = os.path.join(ROOT, "src", "python", "validar_python.py")
+PY_VALIDATOR = os.path.join(ROOT, "src", "python", "core", "validar_python.py")
 C_BIN = os.path.join(ROOT, "sorteny_compressor")
 DATA_RAW = os.path.join(ROOT, "data", "T31TCG_20230907T104629_5.8_512_512_2_1_0.raw")
-WEIGHTS_DIR = os.path.join(ROOT, "weights", "pesos_bin")
+WEIGHTS_DIR = os.path.join(ROOT, "weights", "encoder")
 OUT_DIR = os.path.join(ROOT, "debug_dumps")
+DEFAULT_MAX_LAMBDA = 0.125
 
 
 def run_cmd(cmd: List[str], env=None, quiet=False) -> Tuple[int, float, str, str]:
@@ -29,13 +30,14 @@ def run_cmd(cmd: List[str], env=None, quiet=False) -> Tuple[int, float, str, str
     return p.returncode, dt, out, err
 
 
-def bench_python(py: str, repeats: int, warmup: int, quiet: bool) -> List[float]:
+def bench_python(py: str, repeats: int, warmup: int, max_lambda: float, quiet: bool) -> List[float]:
     times: List[float] = []
     env = os.environ.copy()
     # Disable dumps and reduce TF logs
     for k in ["DUMP_SPECTRAL","DUMP_STAGES","DUMP_Y_PRE","DUMP_M","DUMP_Y_FLOAT"]:
         env[k] = "0"
     env.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+    env["MAX_LAMBDA"] = f"{max_lambda}"
     # Optional: leave oneDNN on by default (fast CPU path)
     # Warmups
     for _ in range(warmup):
@@ -51,7 +53,7 @@ def bench_python(py: str, repeats: int, warmup: int, quiet: bool) -> List[float]
     return times
 
 
-def bench_c(cbin: str, repeats: int, warmup: int, lambda_val: float, omp_threads: int, use_half_even: bool, quiet: bool) -> List[float]:
+def bench_c(cbin: str, repeats: int, warmup: int, lambda_val: float, max_lambda: float, omp_threads: int, use_half_even: bool, quiet: bool) -> List[float]:
     times: List[float] = []
     env = os.environ.copy()
     # Disable dumps
@@ -63,12 +65,12 @@ def bench_c(cbin: str, repeats: int, warmup: int, lambda_val: float, omp_threads
         env["OMP_NUM_THREADS"] = str(omp_threads)
     # Warmups
     for _ in range(warmup):
-        rc, dt, _, _ = run_cmd([cbin, DATA_RAW, f"{lambda_val}", os.path.join(OUT_DIR, "Y_hat_c_bench.bin"), WEIGHTS_DIR], env=env, quiet=True)
+        rc, dt, _, _ = run_cmd([cbin, DATA_RAW, f"{lambda_val}", os.path.join(OUT_DIR, "Y_hat_c_bench.bin"), WEIGHTS_DIR, f"{max_lambda}"], env=env, quiet=True)
         if rc != 0:
             raise RuntimeError(f"C encoder failed during warmup (rc={rc}).")
     # Measured runs
     for _ in range(repeats):
-        rc, dt, _, _ = run_cmd([cbin, DATA_RAW, f"{lambda_val}", os.path.join(OUT_DIR, "Y_hat_c_bench.bin"), WEIGHTS_DIR], env=env, quiet=quiet)
+        rc, dt, _, _ = run_cmd([cbin, DATA_RAW, f"{lambda_val}", os.path.join(OUT_DIR, "Y_hat_c_bench.bin"), WEIGHTS_DIR, f"{max_lambda}"], env=env, quiet=quiet)
         if rc != 0:
             raise RuntimeError(f"C encoder failed (rc={rc}).")
         times.append(dt)
@@ -87,7 +89,8 @@ def main():
     ap = argparse.ArgumentParser(description="Benchmark Python vs C pipelines (wall-clock time)")
     ap.add_argument("--py", default=PY_EXE_DEFAULT, help="Python executable (default: .venv/bin/python)")
     ap.add_argument("--cbin", default=C_BIN, help="C binary path (default: ./sorteny_compressor)")
-    ap.add_argument("--lambda", dest="lambda_val", type=float, default=0.01, help="Lambda value for C run")
+    ap.add_argument("--lambda", dest="lambda_val", type=float, default=0.1, help="Lambda value for C run")
+    ap.add_argument("--max-lambda", dest="max_lambda", type=float, default=DEFAULT_MAX_LAMBDA, help="max_lambda used by C and Python reference")
     ap.add_argument("--repeats", type=int, default=3, help="Number of measured runs per pipeline")
     ap.add_argument("--warmup", type=int, default=1, help="Warmup runs per pipeline (not measured)")
     ap.add_argument("--omp", dest="omp_threads", type=int, default=0, help="OMP_NUM_THREADS for C (0=leave default)")
@@ -106,8 +109,8 @@ def main():
 
     print("Running benchmarks...\n")
 
-    py_times = bench_python(args.py, args.repeats, args.warmup, args.quiet)
-    c_times = bench_c(args.cbin, args.repeats, args.warmup, args.lambda_val, args.omp_threads, args.half_even, args.quiet)
+    py_times = bench_python(args.py, args.repeats, args.warmup, args.max_lambda, args.quiet)
+    c_times = bench_c(args.cbin, args.repeats, args.warmup, args.lambda_val, args.max_lambda, args.omp_threads, args.half_even, args.quiet)
 
     print("\nSummary:")
     print(summarize("Python", py_times))

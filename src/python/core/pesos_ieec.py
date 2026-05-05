@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Extracción de pesos del modelo TF ieec050 en formato binario float32.
+LEGACY: extracción de pesos del modelo TF ieec050 en formato binario float32.
 
 - Lee los SavedModel checkpoint de `Raspberry/sorteny/models/ieec050/{spectral,analysis,synthesis,modulating}`.
-- Exporta todos los tensores a un directorio destino (por defecto `weights/pesos_ieec050`).
+- Exporta todos los tensores a un directorio destino legacy.
 - Opcional: aplica transposición heurística a tensores 4D (asumiendo orden [Out, In, Kh, Kw] -> [Kh, Kw, In, Out])
   para aproximar el layout que espera el encoder C. Activar con `--transpose-convs`.
 - Genera un índice JSON/TSV con forma, dtype, bytes y SHA256 de cada tensor exportado.
@@ -26,7 +26,7 @@ import numpy as np
 import tensorflow as tf
 
 BASE_MODEL_DIR = os.path.join("Raspberry", "sorteny", "models", "ieec050")
-DEFAULT_OUT_DIR = os.path.join("weights", "pesos_ieec050")
+DEFAULT_OUT_DIR = os.path.join("weights", "legacy_ieec050")
 
 # ----------------- Utilidades -----------------
 def ensure_dir(path: str) -> None:

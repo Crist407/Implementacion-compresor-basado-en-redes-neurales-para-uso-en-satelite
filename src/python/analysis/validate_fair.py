@@ -27,7 +27,7 @@ def main():
     image_path = sys.argv[1] if len(sys.argv) > 1 else "data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw"
     c_recon_path = sys.argv[2] if len(sys.argv) > 2 else "output/reconstructed_c.raw"
     model_dir = sys.argv[3] if len(sys.argv) > 3 else "models/SORTENY_Sentinel2_model"
-    lmbda_val = float(sys.argv[4]) if len(sys.argv) > 4 else 0.01
+    lmbda_val = float(sys.argv[4]) if len(sys.argv) > 4 else 0.1
     max_lambda = float(sys.argv[5]) if len(sys.argv) > 5 else 0.125
 
     # --- Clases custom necesarias para cargar el modelo ---

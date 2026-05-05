@@ -52,6 +52,14 @@ TARGET_ENC = sorteny_compressor
 TARGET_DEC = sorteny_decompressor
 TARGET_TEST = sorteny_decoder_ops_test
 SRC_DIR = src/c
+INPUT_RAW ?= data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw
+LAMBDA ?= 0.1
+MAX_LAMBDA ?= 0.125
+ENC_WEIGHTS ?= weights/encoder
+DEC_WEIGHTS ?= weights/decoder
+LATENT_OUT ?= output/latent.bin
+RECON_OUT ?= output/reconstructed.raw
+BENCH_THREADS ?= 4
 
 COMMON_SRCS = \
   $(SRC_DIR)/sorteny_model.c \
@@ -67,7 +75,7 @@ DEC_OBJS = $(DEC_SRCS:.c=.o)
 TEST_OBJS = $(TEST_SRCS:.c=.o)
 DEPS = $(ENC_OBJS:.o=.d) $(DEC_OBJS:.o=.d) $(TEST_OBJS:.o=.d)
 
-.PHONY: all clean distclean run run_dec test_ops rpi3 rpi4 rpi3_fast rpi4_fast
+.PHONY: all clean distclean run run_dec run_pipeline run_parity run_fast test_ops rpi3 rpi4 rpi3_fast rpi4_fast
 
 # Permite usar '>' como prefijo de recetas en lugar de tabulador
 .RECIPEPREFIX := >
@@ -90,12 +98,24 @@ $(TARGET_TEST): $(TEST_OBJS)
 > @echo Compilando: $<
 > $(CC) $(CFLAGS) -c $< -o $@
 
-# Ruta de pesos: usar el set minimal por defecto
+# Ejecuciones locales con las rutas vigentes del repo.
 run: $(TARGET_ENC)
-> ./$(TARGET_ENC) data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw 0.01 debug_dumps/Y_hat_c.bin weights/pesos_bin_minimal
+> ./$(TARGET_ENC) $(INPUT_RAW) $(LAMBDA) $(LATENT_OUT) $(ENC_WEIGHTS) $(MAX_LAMBDA)
 
 run_dec: $(TARGET_DEC)
-> ./$(TARGET_DEC) results/raspberry_results/output_c_20260105_165501.bin output/reconstructed_c.raw weights/pesos_ieec050_decoder 0.125
+> ./$(TARGET_DEC) $(LATENT_OUT) $(RECON_OUT) $(DEC_WEIGHTS) $(MAX_LAMBDA)
+
+run_pipeline: $(TARGET_ENC) $(TARGET_DEC)
+> ./$(TARGET_ENC) $(INPUT_RAW) $(LAMBDA) $(LATENT_OUT) $(ENC_WEIGHTS) $(MAX_LAMBDA)
+> ./$(TARGET_DEC) $(LATENT_OUT) $(RECON_OUT) $(DEC_WEIGHTS) $(MAX_LAMBDA)
+
+run_parity: $(TARGET_ENC) $(TARGET_DEC)
+> STRICT_PARITY=1 ./$(TARGET_ENC) $(INPUT_RAW) $(LAMBDA) $(LATENT_OUT) $(ENC_WEIGHTS) $(MAX_LAMBDA)
+> STRICT_PARITY=1 ./$(TARGET_DEC) $(LATENT_OUT) $(RECON_OUT) $(DEC_WEIGHTS) $(MAX_LAMBDA)
+
+run_fast: $(TARGET_ENC) $(TARGET_DEC)
+> OMP_NUM_THREADS=$(BENCH_THREADS) ./$(TARGET_ENC) $(INPUT_RAW) $(LAMBDA) $(LATENT_OUT) $(ENC_WEIGHTS) $(MAX_LAMBDA)
+> OMP_NUM_THREADS=$(BENCH_THREADS) ./$(TARGET_DEC) $(LATENT_OUT) $(RECON_OUT) $(DEC_WEIGHTS) $(MAX_LAMBDA)
 
 test_ops: $(TARGET_TEST)
 > ./$(TARGET_TEST)
@@ -103,16 +123,16 @@ test_ops: $(TARGET_TEST)
 # --- SHORTCUTS PARA RASPBERRY ---
 
 rpi3:
-> $(MAKE) MODE=release RPI_ARCH=rpi3 OMP=0
+> $(MAKE) MODE=release RPI_ARCH=rpi3 OMP=1
 
 rpi4:
-> $(MAKE) MODE=release RPI_ARCH=rpi4 OMP=0
+> $(MAKE) MODE=release RPI_ARCH=rpi4 OMP=1
 
 rpi3_fast:
-> $(MAKE) MODE=release_fast RPI_ARCH=rpi3 OMP=0
+> $(MAKE) MODE=release RPI_ARCH=rpi3 OMP=1 BENCH_THREADS=4
 
 rpi4_fast:
-> $(MAKE) MODE=release_fast RPI_ARCH=rpi4 OMP=0
+> $(MAKE) MODE=release RPI_ARCH=rpi4 OMP=1 BENCH_THREADS=4
 
 clean:
 > @echo Limpiando...

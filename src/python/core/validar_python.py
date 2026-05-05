@@ -6,7 +6,7 @@ import os
 # --- Configuración ---
 MODEL_DIR = "models/SORTENY_Sentinel2_model"
 IMAGE_FILE = "data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw"
-LAMBDA_VAL = 0.01
+LAMBDA_VAL = 0.1
 OUTPUT_FILE = "python_ground_truth.bin" 
 
 # --- Dimensiones ---
@@ -135,8 +135,6 @@ def main():
     image_tensor = load_image_raw_u16_bsq_to_nhwc(IMAGE_FILE, BANDS, H_IN, W_IN)
     print(f"Imagen cargada, forma: {image_tensor.shape}") # (1, 512, 512, 8)
 
-    lambda_tensor = tf.constant([[[[LAMBDA_VAL]]]], dtype=tf.float32)
-
     # --- Replicar el pipeline de main.c ---
     
     # Etapa 1: Transformada Espectral
@@ -191,8 +189,8 @@ def main():
         gdn0_planar.numpy().astype(np.float32).tofile(os.path.join(dump_dir, "gdn0_py.bin"))
         # Cálculo manual de GDN usando bins exportados para validar fórmula/orientación
         try:
-            gamma_bin = np.fromfile(os.path.join("weights", "pesos_bin", "analysis_gdn_0_gamma.bin"), dtype=np.float32).reshape((C0, C0))
-            beta_bin = np.fromfile(os.path.join("weights", "pesos_bin", "analysis_gdn_0_beta.bin"), dtype=np.float32).reshape((C0,))
+            gamma_bin = np.fromfile(os.path.join("weights", "encoder", "analysis_gdn_0_gamma.bin"), dtype=np.float32).reshape((C0, C0))
+            beta_bin = np.fromfile(os.path.join("weights", "encoder", "analysis_gdn_0_beta.bin"), dtype=np.float32).reshape((C0,))
             eps = float(getattr(l0.activation, "epsilon", 1.0))
             # conv0_pre shape: (8, 256, 256, 128) -> reordenar a (8, 128, 256*256)
             c0_nchw = tf.transpose(conv0_pre, (0,3,1,2))  # (8,128,256,256)
@@ -303,25 +301,22 @@ def main():
     # (32, 32, 8, 384) -> (1, 32, 32, 3072)
     y_3D = tf.reshape(y_3D, (1, H4, W4, BANDS * C3_AN))
     
-    # Etapa 3: Modulating Transform
-    # Permitimos replicar el escalado externo como en C usando la variable de entorno MAX_LAMBDA.
-    # Si MAX_LAMBDA > 0, aplicamos lambda_scaled = lambda / MAX_LAMBDA ANTES de entrar al Sequential.
-    # Si no, usamos lambda_tensor tal cual (el Sequential ya tendrá su propia capa Lambda interna si se definió así en el modelo guardado).
-    max_lambda_env = os.environ.get("MAX_LAMBDA", "")
-    lambda_input = lambda_tensor
-    if max_lambda_env:
-        try:
-            max_lambda_val = float(max_lambda_env)
-            if max_lambda_val > 0.0:
-                print(f"(3/4) Ejecutando Modulating Transform (lambda/max_lambda: {LAMBDA_VAL}/{max_lambda_val})...")
-                lambda_input = lambda_tensor / max_lambda_val
-            else:
-                print("(3/4) Ejecutando Modulating Transform (MAX_LAMBDA <= 0 ignorado)...")
-        except ValueError:
-            print("[WARN] MAX_LAMBDA no es convertible a float; usando lambda original.")
-            print("(3/4) Ejecutando Modulating Transform...")
-    else:
-        print("(3/4) Ejecutando Modulating Transform...")
+    # Etapa 3: Modulating Transform.
+    # Alineado con C: se recorta lambda a [0, max_lambda], se cuantiza a uint8,
+    # se decuantiza y se entrega al SavedModel. El grafo aplica internamente x/0.05.
+    max_lambda_env = os.environ.get("MAX_LAMBDA", "0.125")
+    try:
+        max_lambda_val = float(max_lambda_env)
+        if max_lambda_val <= 0.0:
+            max_lambda_val = 0.125
+    except ValueError:
+        print("[WARN] MAX_LAMBDA no es convertible a float; usando 0.125.")
+        max_lambda_val = 0.125
+    lambda_clipped = min(max(LAMBDA_VAL, 0.0), max_lambda_val)
+    q_byte = int(np.rint((lambda_clipped / max_lambda_val) * 255.0))
+    lambda_quant = (q_byte / 255.0) * max_lambda_val
+    lambda_input = tf.constant([[[[lambda_quant]]]], dtype=tf.float32)
+    print(f"(3/4) Ejecutando Modulating Transform (lambda={LAMBDA_VAL}, max_lambda={max_lambda_val}, q={q_byte}, lambda_quant={lambda_quant:.6f})...")
     modulator = model.modulating_transform(lambda_input) # Forma: (1, 1, 1, 3072)
     # Diagnóstico: inferir el maxval interno de la primera Lambda del ModulatingTransform.
     try:

@@ -9,7 +9,7 @@ Pipeline:
   4. Compara pixel a pixel y calcula métricas (PSNR, max diff, etc.)
 
 Uso:
-  python validate_e2e.py <original.raw> <c_reconstructed.raw> [--lambda 0.01] [--max-lambda 0.125]
+  python validate_e2e.py <original.raw> <c_reconstructed.raw> [--lmbda 0.1] [--max-lambda 0.125]
   
   O modo completo (también ejecuta la pipeline Python):
   python validate_e2e.py <original.raw> <c_reconstructed.raw> --run-python --model-dir models/SORTENY_Sentinel2_model
@@ -222,7 +222,7 @@ def main():
     parser.add_argument("--run-python", action="store_true", help="Ejecutar también la pipeline Python")
     parser.add_argument("--model-dir", default="models/SORTENY_Sentinel2_model", help="Ruta al SavedModel")
     parser.add_argument("--python-output", default=None, help="Ruta para guardar la reconstrucción Python")
-    parser.add_argument("--lmbda", type=float, default=0.01, help="Valor de lambda")
+    parser.add_argument("--lmbda", type=float, default=0.1, help="Valor de lambda")
     parser.add_argument("--max-lambda", type=float, default=0.125, help="Valor máximo de lambda")
     args = parser.parse_args()
     
