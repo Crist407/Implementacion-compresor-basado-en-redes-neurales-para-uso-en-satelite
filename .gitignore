@@ -25,6 +25,8 @@ build/
 sorteny_compressor
 sorteny_decompressor
 sorteny_decoder_ops_test
+sorteny_fq_qmap
+sorteny_semantic_qmap
 
 # TensorBoard logs and TF events
 SORTENY_Sentinel2_model/logs/
@@ -39,9 +41,10 @@ output/*
 # Notebooks
 .ipynb_checkpoints/
 
-# Large raw data (place under data/ and ignore)
+# Large raw data — keep canonical test image, ignore large datasets
 data/*
 !data/.gitkeep
+!data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw
 
 # Temporary files
 *.tmp

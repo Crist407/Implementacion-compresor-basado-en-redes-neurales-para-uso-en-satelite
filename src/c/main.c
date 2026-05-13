@@ -74,10 +74,70 @@ static int env_is_enabled(const char* name) {
     return value && value[0] == '1';
 }
 
+static float lambda_from_q(uint8_t q, float max_lambda) {
+    return ((float)q / 255.0f) * (max_lambda - MIN_LAMBDA) + MIN_LAMBDA;
+}
+
+static int load_q_map_u8(const char* path, uint8_t* q_map, size_t q_map_size) {
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: no se pudo abrir Q-map '%s'\n", path);
+        return -1;
+    }
+
+    size_t n = fread(q_map, sizeof(uint8_t), q_map_size, f);
+    int extra = fgetc(f);
+    fclose(f);
+    if (n != q_map_size || extra != EOF) {
+        fprintf(stderr, "Error: Q-map '%s' debe tener exactamente %zu bytes\n", path, q_map_size);
+        return -1;
+    }
+    return 0;
+}
+
+static void summarize_q_map(
+    const uint8_t* q_map,
+    size_t q_map_size,
+    uint8_t* q_seen,
+    size_t* q_unique_count,
+    uint8_t* q_min,
+    uint8_t* q_max
+) {
+    memset(q_seen, 0, 256);
+    *q_unique_count = 0;
+    *q_min = q_map[0];
+    *q_max = q_map[0];
+    for (size_t i = 0; i < q_map_size; ++i) {
+        uint8_t q = q_map[i];
+        if (q < *q_min) *q_min = q;
+        if (q > *q_max) *q_max = q;
+        if (!q_seen[q]) {
+            q_seen[q] = 1;
+            (*q_unique_count)++;
+        }
+    }
+}
+
+static void build_modulator_for_q(
+    float* restrict out_modulator,
+    float* restrict scratch_hidden,
+    const SORTENY_Model* model,
+    uint8_t q,
+    float max_lambda
+) {
+    float lambda_quant = lambda_from_q(q, max_lambda);
+    float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
+    apply_dense(scratch_hidden, input_lambda, &model->modulating_mod.dense_0);
+    apply_relu(scratch_hidden, MOD_HIDDEN);
+    apply_dense(out_modulator, scratch_hidden, &model->modulating_mod.dense_1);
+    apply_relu(out_modulator, MOD_OUT);
+}
+
 int main(int argc, char* argv[]) {
-    if (argc < 4 || argc > 6) {
-        fprintf(stderr, "Uso: %s <input_image.raw> <lambda> <output_Y_hat.bin> [model_dir] [max_lambda]\n", argv[0]);
+    if (argc < 4 || argc > 7) {
+        fprintf(stderr, "Uso: %s <input_image.raw> <lambda> <output_Y_hat.bin> [model_dir] [max_lambda] [q_map_u8]\n", argv[0]);
         fprintf(stderr, "Ej:   %s data/T31TCG_...raw 0.1 output/latent.bin weights/encoder 0.125\n", argv[0]);
+        fprintf(stderr, "Ej Q: %s data/T31TCG_...raw 0.1 output/latent.bin weights/encoder 0.125 qmap_32x32_u8.bin\n", argv[0]);
         return 1;
     }
 
@@ -85,12 +145,13 @@ int main(int argc, char* argv[]) {
     float lambda = (float)atof(argv[2]);
     const char* output_file = argv[3];
     const char* model_path = (argc >= 5) ? argv[4] : "weights/encoder";
+    const char* q_map_path = (argc >= 7) ? argv[6] : NULL;
     /*
      * max_lambda (opcional): rango superior usado para recortar lambda y
      * cuantizarla en el Q-map de 8 bits antes del ModulatingTransform.
      */
     float max_lambda = 0.0f;
-    if (argc == 6) {
+    if (argc >= 6) {
         max_lambda = (float)atof(argv[5]);
         if (max_lambda <= 0.0f) {
             fprintf(stderr, "[WARN] max_lambda <= 0. Ignorando escalado externo.\n");
@@ -115,7 +176,7 @@ int main(int argc, char* argv[]) {
     float* band_Y = NULL;
     int32_t* band_q_i32 = NULL;
     float* mod_hidden = NULL;
-    float* modulator  = NULL;
+    float* modulator_cache = NULL;
     FILE* f_out = NULL;
 
     // Modo de paridad estricta: fuerza half-to-even y ejecución determinista
@@ -151,13 +212,13 @@ int main(int argc, char* argv[]) {
     scratch_b = allocate_tensor(C0, H1, W1, "scratch_b");
     band_Y = allocate_tensor(C3_AN, H4, W4, "band_Y");
     mod_hidden = allocate_tensor(MOD_HIDDEN, 1, 1, "mod_hidden");
-    modulator  = allocate_tensor(MOD_OUT, 1, 1, "modulator (M)");
+    modulator_cache = allocate_tensor(256, 1, MOD_OUT, "modulator_cache");
     
     if (env_is_enabled("DUMP_STAGES")) {
         fprintf(stderr, "[WARN] DUMP_STAGES es legacy y no genera artefactos completos en el encoder actual; se ignora.\n");
     }
 
-    if (!spectral_out || !scratch_a || !scratch_b || !band_Y || !mod_hidden || !modulator) {
+    if (!spectral_out || !scratch_a || !scratch_b || !band_Y || !mod_hidden || !modulator_cache) {
         fprintf(stderr, "Error: fallo de reserva de memoria para tensores.\n");
         goto cleanup;
     }
@@ -174,7 +235,7 @@ int main(int argc, char* argv[]) {
     printf("  (2/5) Init Analysis buffers...\n");
     free(in_image_tensor); in_image_tensor = NULL; // Liberamos la imagen original
 
-    // Etapa 2: Modulating Transform (Calcular el factor de escala 'M') antes del bucle de bandas
+    // Etapa 2: construir Q-map y cache de moduladores antes del bucle de bandas
     if (max_lambda > 0.0f) {
         printf("  (3/5) Ejecutando Modulating Transform (Lambda=%.6f, max_lambda=%.6f)\n", lambda, max_lambda);
     } else {
@@ -183,20 +244,40 @@ int main(int argc, char* argv[]) {
 
     // Cuantización de lambda como en Python: Q = round((lambda - min_lambda)/(max_lambda - min_lambda)*255)
     uint8_t q_byte = (uint8_t)lrintf(((lambda - MIN_LAMBDA) / (max_lambda - MIN_LAMBDA)) * 255.0f);
-    // Decuantización: lambda_quant = (Q/255)*(max_lambda - min_lambda) + min_lambda
-    float lambda_quant = ((float)q_byte / 255.0f) * (max_lambda - MIN_LAMBDA) + MIN_LAMBDA;
 
-    // El modulador tiene una capa Lambda interna que hace: x / maxval (donde maxval=0.05)
-    // Esta división es NECESARIA para replicar el comportamiento de TensorFlow
-    float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
-    apply_dense(mod_hidden, input_lambda, &model->modulating_mod.dense_0);
-    apply_relu(mod_hidden, MOD_HIDDEN);
-    apply_dense(modulator, mod_hidden, &model->modulating_mod.dense_1);
-    
-    // Aplicar ReLU final a la salida (UNA SOLA VEZ)
-    apply_relu(modulator, MOD_OUT);
-    printf("        ...Modulador 'M' calculado. input_lambda=%.4f, M[0]=%.2f, M[100]=%.2f\n", 
-           input_lambda[0], modulator[0], modulator[100]);
+    uint8_t q_map[H4 * W4];
+    size_t q_map_size = H4 * W4;
+    if (q_map_path) {
+        if (load_q_map_u8(q_map_path, q_map, q_map_size) != 0) {
+            goto cleanup;
+        }
+        printf("        ...Q-map externo cargado desde '%s'\n", q_map_path);
+        printf("        ...NOTA: argumento lambda=%.6f ignorado para cuantización; se usan los Q del fichero.\n", lambda);
+    } else {
+        for (size_t i = 0; i < q_map_size; ++i) q_map[i] = q_byte;
+    }
+
+    uint8_t q_seen[256];
+    size_t q_unique_count = 0;
+    uint8_t q_min = 0;
+    uint8_t q_max = 0;
+    summarize_q_map(q_map, q_map_size, q_seen, &q_unique_count, &q_min, &q_max);
+    uint8_t q_const = q_map[0];
+
+    for (size_t q = 0; q < 256; ++q) {
+        if (q_seen[q]) {
+            build_modulator_for_q(modulator_cache + q * MOD_OUT, mod_hidden, model, (uint8_t)q, max_lambda);
+        }
+    }
+
+    if (q_unique_count == 1) {
+        const float* modulator = modulator_cache + (size_t)q_const * MOD_OUT;
+        printf("        ...Q-map constante: Q=%u lambda_q=%.6f, M[0]=%.2f, M[100]=%.2f\n",
+               q_const, lambda_from_q(q_const, max_lambda), modulator[0], modulator[100]);
+    } else {
+        printf("        ...Q-map variable: Q_range=[%u,%u], unique_Q=%zu, lambda_range=[%.6f,%.6f]\n",
+               q_min, q_max, q_unique_count, lambda_from_q(q_min, max_lambda), lambda_from_q(q_max, max_lambda));
+    }
     
     // Preparar salida en streaming
     f_out = fopen(output_file, "wb");
@@ -214,11 +295,8 @@ int main(int argc, char* argv[]) {
     size_t hwritten = fwrite(header, sizeof(uint16_t), 5, f_out);
     if (hwritten != 5) { fprintf(stderr, "Error: escritura de cabecera incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
 
-    // Mapa Q (32x32) constante: lambda cuantizada a 8 bits
-    uint8_t q_map[H4 * W4];
-    for (size_t i = 0; i < H4 * W4; ++i) q_map[i] = q_byte;
-    size_t qwritten = fwrite(q_map, sizeof(uint8_t), H4 * W4, f_out);
-    if (qwritten != H4 * W4) { fprintf(stderr, "Error: escritura de Q incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
+    size_t qwritten = fwrite(q_map, sizeof(uint8_t), q_map_size, f_out);
+    if (qwritten != q_map_size) { fprintf(stderr, "Error: escritura de Q incompleta.\n"); fclose(f_out); f_out=NULL; goto cleanup; }
 
     if (env_is_enabled("DEBUG_DUMP") || env_is_enabled("DUMP_SPECTRAL") ||
         env_is_enabled("DUMP_Y_PRE") || env_is_enabled("DUMP_M") ||
@@ -239,8 +317,12 @@ int main(int argc, char* argv[]) {
 
 
     // Configuración de redondeo (constante para todo el bucle)
+    // Por defecto: half-to-even (alineado con tf.round y con el decoder).
+    // Se puede desactivar con USE_HALF_EVEN=0.
     const char* use_half_even_env = getenv("USE_HALF_EVEN");
-    int use_half_even = strict_parity ? 1 : (use_half_even_env && use_half_even_env[0] == '1');
+    int use_half_even = 1;
+    if (use_half_even_env) use_half_even = (use_half_even_env[0] == '1');
+    if (strict_parity) use_half_even = 1;
     size_t plane_sz = (size_t)H_Y * W_Y;
     size_t band_latent_elems = (size_t)C3_AN * plane_sz;
     band_q_i32 = (int32_t*)malloc(band_latent_elems * sizeof(int32_t));
@@ -286,19 +368,36 @@ int main(int argc, char* argv[]) {
 
         
         for (size_t c = 0; c < C3_AN; c++) {
-            float M_val = modulator[b * C3_AN + c];
+            size_t mod_base = b * C3_AN + c;
             size_t plane_off = c * plane_sz;
-            for (size_t p = 0; p < plane_sz; p++) {
-                float prod = band_Y[plane_off + p] * M_val;
-                float qv_f = 0.0f;
-                if (use_half_even) {
-                    float _n = floorf(prod);
-                    float _diff = prod - _n;
-                    qv_f = (_diff > 0.5f) ? (_n + 1.0f) : (_diff < 0.5f ? _n : ((((int64_t)_n & 1LL) == 0LL) ? _n : (_n + 1.0f)));
-                } else {
-                    qv_f = roundf(prod);
+            if (q_unique_count == 1) {
+                float M_val = modulator_cache[(size_t)q_const * MOD_OUT + mod_base];
+                for (size_t p = 0; p < plane_sz; p++) {
+                    float prod = band_Y[plane_off + p] * M_val;
+                    float qv_f = 0.0f;
+                    if (use_half_even) {
+                        float _n = floorf(prod);
+                        float _diff = prod - _n;
+                        qv_f = (_diff > 0.5f) ? (_n + 1.0f) : (_diff < 0.5f ? _n : ((((int64_t)_n & 1LL) == 0LL) ? _n : (_n + 1.0f)));
+                    } else {
+                        qv_f = roundf(prod);
+                    }
+                    band_q_i32[plane_off + p] = (int32_t)lrintf(qv_f);
                 }
-                band_q_i32[plane_off + p] = (int32_t)lrintf(qv_f);
+            } else {
+                for (size_t p = 0; p < plane_sz; p++) {
+                    float M_val = modulator_cache[(size_t)q_map[p] * MOD_OUT + mod_base];
+                    float prod = band_Y[plane_off + p] * M_val;
+                    float qv_f = 0.0f;
+                    if (use_half_even) {
+                        float _n = floorf(prod);
+                        float _diff = prod - _n;
+                        qv_f = (_diff > 0.5f) ? (_n + 1.0f) : (_diff < 0.5f ? _n : ((((int64_t)_n & 1LL) == 0LL) ? _n : (_n + 1.0f)));
+                    } else {
+                        qv_f = roundf(prod);
+                    }
+                    band_q_i32[plane_off + p] = (int32_t)lrintf(qv_f);
+                }
             }
 
         }
@@ -326,9 +425,11 @@ cleanup:
     
     if (in_image_tensor) free(in_image_tensor);
     if (spectral_out) free(spectral_out);
+    if (scratch_a) free(scratch_a);
+    if (scratch_b) free(scratch_b);
     if (band_Y) free(band_Y);
     if (mod_hidden) free(mod_hidden);
-    if (modulator) free(modulator);
+    if (modulator_cache) free(modulator_cache);
     if (band_normalized) free(band_normalized);
     if (band_q_i32) free(band_q_i32);
 

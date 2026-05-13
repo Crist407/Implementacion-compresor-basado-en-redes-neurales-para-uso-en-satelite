@@ -51,6 +51,8 @@ endif
 TARGET_ENC = sorteny_compressor
 TARGET_DEC = sorteny_decompressor
 TARGET_TEST = sorteny_decoder_ops_test
+TARGET_FQ = sorteny_fq_qmap
+TARGET_SEM = sorteny_semantic_qmap
 SRC_DIR = src/c
 INPUT_RAW ?= data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw
 LAMBDA ?= 0.1
@@ -69,18 +71,22 @@ COMMON_SRCS = \
 ENC_SRCS = $(SRC_DIR)/main.c $(COMMON_SRCS)
 DEC_SRCS = $(SRC_DIR)/decompress.c $(COMMON_SRCS)
 TEST_SRCS = $(SRC_DIR)/test_decoder_ops.c $(COMMON_SRCS)
+FQ_SRCS = $(SRC_DIR)/fixed_quality_qmap.c
+SEM_SRCS = $(SRC_DIR)/semantic_qmap.c
 
 ENC_OBJS = $(ENC_SRCS:.c=.o)
 DEC_OBJS = $(DEC_SRCS:.c=.o)
 TEST_OBJS = $(TEST_SRCS:.c=.o)
-DEPS = $(ENC_OBJS:.o=.d) $(DEC_OBJS:.o=.d) $(TEST_OBJS:.o=.d)
+FQ_OBJS = $(FQ_SRCS:.c=.o)
+SEM_OBJS = $(SEM_SRCS:.c=.o)
+DEPS = $(ENC_OBJS:.o=.d) $(DEC_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(FQ_OBJS:.o=.d) $(SEM_OBJS:.o=.d)
 
 .PHONY: all clean distclean run run_dec run_pipeline run_parity run_fast test_ops rpi3 rpi4 rpi3_fast rpi4_fast
 
 # Permite usar '>' como prefijo de recetas en lugar de tabulador
 .RECIPEPREFIX := >
 
-all: $(TARGET_ENC) $(TARGET_DEC)
+all: $(TARGET_ENC) $(TARGET_DEC) $(TARGET_FQ) $(TARGET_SEM)
 
 $(TARGET_ENC): $(ENC_OBJS)
 > @echo Enlazando: $@
@@ -93,6 +99,14 @@ $(TARGET_DEC): $(DEC_OBJS)
 $(TARGET_TEST): $(TEST_OBJS)
 > @echo Enlazando: $@
 > $(CC) $(CFLAGS) -o $@ $(TEST_OBJS) $(LDFLAGS)
+
+$(TARGET_FQ): $(FQ_OBJS)
+> @echo Enlazando: $@
+> $(CC) $(CFLAGS) -o $@ $(FQ_OBJS) $(LDFLAGS)
+
+$(TARGET_SEM): $(SEM_OBJS)
+> @echo Enlazando: $@
+> $(CC) $(CFLAGS) -o $@ $(SEM_OBJS) $(LDFLAGS)
 
 %.o: %.c
 > @echo Compilando: $<
@@ -136,7 +150,7 @@ rpi4_fast:
 
 clean:
 > @echo Limpiando...
-> rm -f $(TARGET_ENC) $(TARGET_DEC) $(TARGET_TEST) $(ENC_OBJS) $(DEC_OBJS) $(TEST_OBJS) $(DEPS)
+> rm -f $(TARGET_ENC) $(TARGET_DEC) $(TARGET_TEST) $(TARGET_FQ) $(TARGET_SEM) $(ENC_OBJS) $(DEC_OBJS) $(TEST_OBJS) $(FQ_OBJS) $(SEM_OBJS) $(DEPS)
 
 distclean: clean
 

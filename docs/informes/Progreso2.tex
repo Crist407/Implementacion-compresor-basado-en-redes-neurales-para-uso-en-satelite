@@ -1,0 +1,1590 @@
+\documentclass[11pt,a4paper]{article}
+
+% ------------------------------------------------------------------
+% Paquets base
+% ------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[catalan]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!8}
+}
+
+\title{\textbf{Progrés 2 - SORTENY C}\\
+Fase 2: compressió de qualitat fixa local i semàntica Sentinel-2}
+\author{Cristhian Omar Añez López}
+\date{5 de maig de 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ------------------------------------------------------------------
+\section{Objectiu de la Fase 2}
+
+Aquest document és la guia viva de la Fase 2 del projecte SORTENY C. El seu objectiu és deixar documentat, abans de modificar la implementació, el procés que se seguirà per evolucionar la base actual des d'una compressió amb un únic paràmetre global $\lambda$ cap a un sistema de \textbf{qualitat fixa local i semàntica}, executat en C sobre Raspberry Pi 3B+.
+
+La Fase 2 es planteja amb quatre objectius principals:
+\begin{enumerate}
+  \item Incorporar suport per a mapes de qualitat locals, utilitzant el Q-map de 8 bits ja present al format de bitstream.
+  \item Implementar compressió de qualitat fixa per blocs, basada en la relació entre $\lambda$, la màscara de modulació i l'error de reconstrucció descrita a la literatura.
+  \item Afegir una capa semàntica orientada a Sentinel-2, de manera que la qualitat es pugui assignar segons l'objectiu de la missió: vegetació, aigua, neu, núvols o zones cremades.
+  \item Mantenir la viabilitat en Raspberry Pi 3B+, amb ús de memòria controlat, execució optimitzada i validació reproduïble.
+\end{enumerate}
+
+Aquest document no substitueix encara l'informe final ni la presentació. Els fitxers \texttt{docs/informes/Entrega Final.tex} i \texttt{docs/presentacion/Presentacion.tex} es mantenen com a documents històrics fins que la Fase 2 estigui prou consolidada.
+
+% ------------------------------------------------------------------
+\section{Línia Base Actual}
+
+\subsection{Estat funcional}
+
+La base actual del repositori disposa d'un pipeline C complet i validat:
+\begin{itemize}
+  \item \textbf{Compressor C}: lectura RAW BSQ \texttt{uint16}, transformada espectral, normalització, analysis transform espacial, modulació per $\lambda$, quantització i escriptura del bitstream.
+  \item \textbf{Descompressor C}: lectura de bitstream, Q-map i latents, reconstrucció de $\lambda$, desmodulació, synthesis transform espacial, transformada espectral inversa, clamp i sortida RAW BSQ \texttt{uint16}.
+  \item \textbf{Pesos oficials del repositori}: \texttt{weights/encoder} per al compressor i \texttt{weights/decoder} per al descompressor.
+  \item \textbf{Configuració canònica}: imatge Sentinel-2 de $8 \times 512 \times 512$, $\lambda=0.1$ i \texttt{max\_lambda=0.125}.
+\end{itemize}
+
+La codificació entròpica del latent encara no forma part del pipeline C final. El bitstream actual conté capçalera, Q-map i latents \texttt{int32}. Per tant, qualsevol resultat de Fase 2 s'haurà d'interpretar com a evolució del pipeline sense codificador entròpic final, fins que aquest mòdul s'integri explícitament.
+
+\subsection{Resultats oficials de Progrés 1}
+
+La font canònica dels resultats actuals és el document de Progrés 1, concretament la versió \texttt{Progreso1\_1.tex} facilitada durant el sanejament de la base. Els resultats provenen d'una Raspberry Pi 3B+ sobre la imatge \texttt{T31TCG\_20230907T104629\_5.8\_512\_512\_2\_1\_0.raw}, amb 3 repeticions i 1 \textit{warmup}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrr}
+\toprule
+\textbf{Mètrica} & \textbf{Baseline C, 1 fil} & \textbf{Fast C, 4 fils} \\
+\midrule
+Compressió mitjana (s) & 542.9492 & 193.3121 \\
+Descompressió mitjana (s) & 401.4604 & 159.7029 \\
+Temps total mitjà (s) & 944.4096 & 353.0149 \\
+PSNR vs original (dB) & 76.7255 & 76.7255 \\
+MAE vs original & 6.8350 & 6.8350 \\
+RAM pic descompressió (MB) & 134.6641 & 135.6953 \\
+Fils màxims observats & 1 & 4 \\
+\bottomrule
+\end{tabular}
+\caption{Resultats oficials actuals en Raspberry Pi 3B+.}
+\end{table}
+
+El mode fast amb OpenMP i 4 fils és el perfil recomanat per a Raspberry Pi 3B+, amb un speedup total de 2.6753x respecte al baseline d'un fil.
+
+\subsection{Paritat C/Python}
+
+La comparativa amb Python de referència sense codificador entròpic mostra que les reconstruccions són molt properes, però no pixel-perfect:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Mètrica C vs Python} & \textbf{Valor} \\
+\midrule
+Mida bitstream C & 12,583,946 bytes \\
+Mida bitstream Python & 12,583,946 bytes \\
+Bytes diferents & 412 \\
+Primer byte diferent & offset 17,278 (\texttt{C=73}, \texttt{PY=74}) \\
+PSNR reconstrucció C vs Python & 105.4077 dB \\
+MSE reconstrucció C vs Python & 0.1236453 \\
+MAE reconstrucció C vs Python & 0.0713868 \\
+Diferència màxima absoluta & 8 \\
+Píxels idèntics & 94.5585\% \\
+\bottomrule
+\end{tabular}
+\caption{Paritat actual entre la implementació C i la referència Python.}
+\end{table}
+
+La interpretació correcta és que la base C conserva la qualitat esperada i és numèricament molt propera a Python, però no s'ha de descriure com a bitstream o reconstrucció perfectament idèntica.
+
+\subsection{Limitacions conegudes}
+
+\begin{itemize}
+  \item El compressor manté el mode global per defecte, però ja pot acceptar un Q-map extern \texttt{uint8} de $32 \times 32$ i generar latents coherents amb aquest mapa.
+  \item El descompressor ja disposa d'un primer suport per llegir Q-maps no constants mitjançant cache de moduladors per Q.
+  \item Encara falta generar Q-maps de manera automàtica a partir d'un objectiu de qualitat fixa local o d'una política semàntica Sentinel-2.
+  \item Els scripts canònics de benchmark de Raspberry procedeixen d'artefactes recuperats del bundle de Progrés 1 i encara no formen part completa del repositori local.
+  \item La revalidació temporal dels benchmarks en Raspberry queda pendent: durant l'última sessió es va detectar freqüència baixa, estat \texttt{throttled=0xf0000} i posterior pèrdua temporal d'accés SSH després d'un reinici.
+\end{itemize}
+
+% ------------------------------------------------------------------
+\section{Protocol de Treball i Checkpoints}
+
+Abans d'iniciar la implementació de la Fase 2 s'ha creat una còpia de seguretat del repositori en l'estat inicial sanejat. Aquesta còpia és el punt de retorn si una evolució futura deixa la base en un estat difícil de recuperar.
+
+\begin{itemize}
+  \item \textbf{Còpia de seguretat}: \texttt{../backups/sorteny\_safe\_state\_20260506\_193632.tar.gz}.
+  \item \textbf{Contingut}: codi, documentació, dades, pesos, models i metadades Git.
+  \item \textbf{Exclusions}: entorn virtual \texttt{.venv}, caches \texttt{\_\_pycache\_\_}, sortides temporals i objectes de compilació.
+  \item \textbf{Estat Git en el moment de la còpia}: arbre net excepte el document nou \texttt{docs/informes/Progreso2.tex}.
+\end{itemize}
+
+El desenvolupament es farà en increments petits. Cada canvi funcional haurà de tenir una comprovació associada abans de continuar amb el següent. Això evita acumular cinc canvis independents i descobrir l'error només al final.
+
+\subsection{Regla de treball per cada canvi}
+
+Per cada funció, càlcul o modificació de pipeline es seguirà aquest ordre:
+\begin{enumerate}
+  \item Definir l'objectiu exacte del canvi i el comportament esperat.
+  \item Fer la modificació mínima necessària.
+  \item Executar una prova específica del canvi.
+  \item Guardar un checkpoint amb entrada, sortida, comanda i mètriques quan el canvi generi dades observables.
+  \item Registrar el resultat a la bitàcola tècnica d'aquest document.
+  \item Executar una regressió curta per confirmar que la base anterior continua funcionant.
+\end{enumerate}
+
+\subsection{Format dels checkpoints}
+
+Els checkpoints de desenvolupament es guardaran preferentment fora del codi font, sota una ruta de resultats com:
+
+\begin{lstlisting}[language=bash]
+results/checkpoints/YYYYMMDD_nom_del_canvi/
+\end{lstlisting}
+
+Cada checkpoint haurà de contenir, quan sigui aplicable:
+\begin{itemize}
+  \item fitxer d'entrada o descripció exacta de l'entrada utilitzada;
+  \item sortida generada pel càlcul nou;
+  \item comanda executada;
+  \item mètriques de qualitat o valors esperats;
+  \item checksums si cal comparar artefactes binaris;
+  \item conclusió breu: correcte, incorrecte o pendent.
+\end{itemize}
+
+Els checkpoints no substitueixen els tests finals. Són evidència intermèdia per localitzar ràpidament l'origen d'un error quan una fase posterior falli.
+
+% ------------------------------------------------------------------
+\section{Marc Teòric}
+
+\subsection{De $\lambda$ global a qualitat fixa}
+
+SORTENY utilitza un paràmetre $\lambda$ per controlar el compromís entre taxa i distorsió. En la base actual, $\lambda$ és únic per a tota la imatge. La Fase 2 canvia aquesta idea: cada bloc espacial podrà tenir un valor propi de $\lambda$, de manera que la qualitat es distribueixi segons la importància local de la informació.
+
+El treball de Mijares i Verdú et al. \cite{mijares2024fixed} mostra que es pot estimar analíticament el $\lambda$ necessari per assolir un error objectiu sense fer una cerca binària. Això és especialment important en maquinari limitat, perquè una cerca iterativa requeriria executar múltiples vegades el pipeline de compressió/descompressió.
+
+\subsection{Relació entre $\lambda$, màscara i MSE}
+
+La base teòrica és la relació empírica entre:
+\begin{itemize}
+  \item el valor de $\lambda$,
+  \item la magnitud mitjana de la màscara de modulació $\overline{\mathcal{M}}$,
+  \item l'error quadràtic mitjà de reconstrucció (MSE).
+\end{itemize}
+
+La formulació utilitzada com a punt de partida és:
+\begin{equation}
+  \hat{\lambda} =
+  \frac{1}{a}
+  \left(
+    \sqrt{
+      \frac{\alpha MSE_0(x)}
+      {4(MSE - MSE_0(x))}
+    }
+    - b
+  \right)
+\end{equation}
+
+on $MSE_0(x)$ representa l'error mínim associat al pas pel model sense l'efecte dominant de la quantització, $MSE$ és l'objectiu de qualitat i $a$, $b$ i $\alpha$ són coeficients que s'han de calibrar per al model i les dades utilitzades.
+
+Aquesta expressió no s'ha d'incorporar directament al codi sense validació experimental. Primer caldrà mesurar o estimar els coeficients en la base actual, amb els pesos i la imatge Sentinel-2 usada al projecte.
+
+\subsection{Quantització del mapa de qualitat}
+
+Per transmetre els valors locals de $\lambda$ al descompressor, s'utilitzarà un Q-map de 8 bits. La quantització prevista és:
+\begin{equation}
+  Q =
+  \operatorname{round}
+  \left(
+    255 \cdot
+    \frac{\lambda - \lambda_{min}}
+    {\lambda_{max} - \lambda_{min}}
+  \right)
+\end{equation}
+
+i la reconstrucció al decoder:
+\begin{equation}
+  \hat{\lambda} =
+  \frac{Q}{255}
+  (\lambda_{max} - \lambda_{min}) + \lambda_{min}
+\end{equation}
+
+En la configuració actual, $\lambda_{min}=0$ i \texttt{max\_lambda=0.125}. El cas global existent equival a un Q-map constant.
+
+\subsection{Informació lateral}
+
+Per una imatge de $512 \times 512$ píxels i una graella latent de $32 \times 32$, el Q-map ocupa 1024 bytes. Aquesta informació lateral és petita respecte al volum de la imatge original i permet que el decoder conegui la qualitat assignada a cada regió.
+
+La decisió d'usar un Q-map de 8 bits té dos avantatges:
+\begin{itemize}
+  \item manté el format simple i compatible amb la implementació actual;
+  \item permet precalcular o cachejar moduladors per un màxim de 256 valors de Q, reduint el cost de càlcul en Raspberry.
+\end{itemize}
+
+% ------------------------------------------------------------------
+\section{Sentinel-2 i Semàntica}
+
+\subsection{Bandes Sentinel-2}
+
+Sentinel-2 proporciona 13 bandes espectrals amb resolucions espacials diferents \cite{sentinelhub}:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Resolució} & \textbf{Bandes} & \textbf{Ús típic} \\
+\midrule
+10 m & B02, B03, B04, B08 & color visible i NIR principal \\
+20 m & B05, B06, B07, B8A, B11, B12 & red edge, NIR estret i SWIR \\
+60 m & B01, B09, B10 & aerosols, vapor d'aigua i cirrus \\
+\bottomrule
+\end{tabular}
+\caption{Resum operatiu de bandes Sentinel-2.}
+\end{table}
+
+La base actual treballa amb una imatge de 8 bandes i $512 \times 512$ píxels. Per tant, abans d'implementar decisions semàntiques és obligatori documentar l'ordre exacte de bandes del RAW utilitzat. Sense aquest ordre, qualsevol índex radiomètric podria calcular-se sobre bandes incorrectes.
+
+\subsection{Índexs radiomètrics prioritaris}
+
+Els primers índexs que es consideraran són:
+
+\begin{align}
+  NDVI &= \frac{NIR - Red}{NIR + Red} \\
+  NDMI &= \frac{NIR - SWIR1}{NIR + SWIR1} \\
+  NBR  &= \frac{NIR - SWIR2}{NIR + SWIR2} \\
+  NDSI &= \frac{Green - SWIR1}{Green + SWIR1}
+\end{align}
+
+El seu ús previst és:
+\begin{itemize}
+  \item \textbf{NDVI}: prioritzar vegetació, boscos i zones agrícoles.
+  \item \textbf{NDMI}: prioritzar humitat de vegetació i contingut d'aigua.
+  \item \textbf{NBR}: prioritzar zones cremades o anàlisi post-incendi.
+  \item \textbf{NDSI}: ajudar a distingir neu respecte d'altres superfícies brillants.
+\end{itemize}
+
+La semàntica no substituirà la qualitat fixa local. Actuarà com una capa de decisió que tradueix objectius de missió en objectius de qualitat per bloc.
+
+\subsection{Presets de missió}
+
+La interfície de Fase 2 haurà de permetre presets d'alt nivell, per exemple:
+\begin{itemize}
+  \item \texttt{vegetation}: qualitat alta en blocs amb NDVI elevat.
+  \item \texttt{water}: qualitat alta en zones relacionades amb masses d'aigua o humitat.
+  \item \texttt{burned}: qualitat alta en regions rellevants per NBR.
+  \item \texttt{clouds}: qualitat alta en núvols o estructures atmosfèriques si la missió ho requereix.
+  \item \texttt{uniform}: qualitat fixa no semàntica, útil com a baseline.
+\end{itemize}
+
+Els llindars inicials s'hauran de considerar heurístics. Per exemple, NDVI $>0.4$ pot ser un primer criteri per vegetació, però haurà de validar-se amb la imatge real i amb la distribució radiomètrica dels valors \texttt{uint16}.
+
+% ------------------------------------------------------------------
+\section{Roadmap d'Implementació}
+
+\subsection{Milestone A: Q-map espacial variable}
+
+Objectiu: convertir el Q-map de camp constant a camp espacial real, mantenint compatibilitat amb els bitstreams actuals.
+
+\begin{itemize}
+  \item El compressor ja pot rebre un mapa de Q extern. La generació interna queda pendent per als milestones de qualitat fixa i semàntica.
+  \item El descompressor ja no assumeix que tots els valors del Q-map són iguals; calcula un modulador per cada valor Q present.
+  \item El cas constant haurà de continuar funcionant sense penalització rellevant.
+  \item Per eficiència, es prioritzarà precalcular o cachejar moduladors per valors Q únics, amb un màxim de 256.
+\end{itemize}
+
+El criteri d'èxit d'aquest hito serà reconstruir correctament un bitstream amb Q-map variable sintètic i confirmar que el cas constant reprodueix la qualitat actual.
+
+\subsection{Milestone B: qualitat fixa local per blocs}
+
+Objectiu: assignar valors de $\lambda$ per blocs espacials segons un MSE objectiu.
+
+\begin{itemize}
+  \item Implementar una graella de blocs inicial, preferentment $16 \times 16$ píxels per al cas latent actual.
+  \item Estimar $MSE_0(x)$ per imatge o per bloc, segons el cost computacional viable.
+  \item Calibrar els coeficients $a$, $b$ i $\alpha$ per al model exportat.
+  \item Generar Q-map local a partir del $\lambda$ estimat.
+  \item Validar error global i error local, no només PSNR mitjà.
+\end{itemize}
+
+El criteri d'èxit serà demostrar que el sistema pot acostar-se a un objectiu de qualitat local sense cerca binària i sense trencar el temps/memòria admissible en Raspberry.
+
+\subsubsection{Barrido empíric inicial de Q}
+
+Abans d'aplicar la fórmula de qualitat fixa local, s'ha executat un barrido amb Q-maps constants per aïllar l'efecte de Q sobre la qualitat. Aquest experiment no integra codificació entròpica i manté el format actual de bitstream: capçalera, Q-map i latents \texttt{int32}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrr}
+\toprule
+\textbf{Q} & \textbf{$\lambda$ reconstruït} & \textbf{MSE global} & \textbf{PSNR (dB)} \\
+\midrule
+160 & 0.07843137 & 105.5577 & 76.0946 \\
+176 & 0.08627451 & 99.4267 & 76.3544 \\
+192 & 0.09411765 & 94.4020 & 76.5797 \\
+204 & 0.10000000 & 91.2853 & 76.7255 \\
+216 & 0.10588235 & 88.3838 & 76.8657 \\
+232 & 0.11372549 & 85.2834 & 77.0208 \\
+\bottomrule
+\end{tabular}
+\caption{Barrido empíric Q $\rightarrow$ qualitat sobre la imatge canònica.}
+\end{table}
+
+El resultat és coherent amb l'arquitectura: a mesura que Q augmenta, el MSE global disminueix i el PSNR augmenta. El cas Q=204 reprodueix el baseline oficial local byte a byte, tant en \texttt{latent.bin} com en \texttt{reconstructed.raw}. Aquesta taula és evidència de calibratge, no encara una política de qualitat fixa local.
+
+\subsubsection{Selector global de Q per objectiu de qualitat}
+
+Com a pas intermedi abans de la qualitat local per blocs, s'ha implementat un selector global que llegeix el barrido empíric i genera un Q-map constant per assolir un objectiu de qualitat. Per a un objectiu de PSNR de 76.8 dB, la interpolació entre Q=204 i Q=216 selecciona Q=210:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l r}
+\toprule
+\textbf{Camp} & \textbf{Valor} \\
+\midrule
+Objectiu PSNR & 76.8000 dB \\
+Q seleccionat & 210 \\
+$\lambda$ reconstruït & 0.10294118 \\
+PSNR estimat & 76.7956 dB \\
+PSNR real & 76.8000 dB \\
+Error PSNR & 0.00003 dB \\
+MSE real & 89.7312 \\
+\bottomrule
+\end{tabular}
+\caption{Validació del selector global de Q amb objectiu PSNR 76.8 dB.}
+\end{table}
+
+Aquest resultat valida que el Q-map pot actuar com a control global de qualitat sobre la base C actual. Aquest selector és, però, una eina auxiliar en Python per a calibratge i evidència. La ruta prevista per a Raspberry ha de fer la decisió del Q-map en C.
+
+\subsubsection{Generador C de Q-map de qualitat fixa local}
+
+S'ha implementat una primera utilitat C, \texttt{sorteny\_fq\_qmap}, que llegeix una calibració \texttt{TSV} i genera un Q-map local \texttt{uint8} de $32 \times 32$. La calibració es construeix de manera auxiliar a partir del barrido empíric Q amb el model:
+
+\begin{equation}
+  MSE \simeq c_0 + \frac{c_1}{M(\lambda)^2}
+\end{equation}
+
+on $M(\lambda)$ és la magnitud mitjana del modulador. L'ajust lineal del modulador sobre els pesos actuals dona:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l r}
+\toprule
+\textbf{Camp} & \textbf{Valor} \\
+\midrule
+Blocs calibrats & 1024 \\
+Blocs vàlids & 1013 \\
+Blocs amb fallback & 11 \\
+\texttt{mod\_a} & 884.4594 \\
+\texttt{mod\_b} & 13.9542 \\
+$R^2$ modulador & 0.9999999999998 \\
+MSE baseline predit & 91.1461 \\
+PSNR baseline predit & 76.7321 dB \\
+\bottomrule
+\end{tabular}
+\caption{Calibració inicial per al generador C de Q-map local.}
+\end{table}
+
+La regressió de seguretat amb \texttt{--target-from-q 204} genera un Q-map constant Q=204 i reprodueix byte a byte el baseline local: \texttt{latent\_cmp=0} i \texttt{recon\_cmp=0}.
+
+També s'ha provat un objectiu local uniforme de PSNR 76.8 dB. El generador C produeix 38 valors de Q diferents, amb rang Q=160--232 i mitjana Q=175.4111. La reconstrucció resultant queda en MSE 100.0796 i PSNR 76.3260 dB. Aquest resultat no es considera un error d'execució: mostra que l'objectiu local uniforme queda fora del rang calibrat per a molts blocs, que queden retallats a Q mínim o màxim. La conclusió és que caldrà ampliar el rang de calibratge o definir objectius locals per bloc més realistes abans de reclamar qualitat fixa local estricta.
+
+\subsubsection{Barrido ampliat i mapa de viabilitat}
+
+Per comprovar si el problema anterior era només un rang de calibratge massa petit, s'ha repetit el barrido amb Q=128, 144, 160, 176, 192, 204, 216, 232, 240, 248 i 255. El resultat global manté la monotonia esperada:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrr}
+\toprule
+\textbf{Q} & \textbf{$\lambda$ reconstruït} & \textbf{MSE global} & \textbf{PSNR (dB)} \\
+\midrule
+128 & 0.06274510 & 125.1939 & 75.3536 \\
+144 & 0.07058824 & 114.0605 & 75.7581 \\
+160 & 0.07843137 & 105.5577 & 76.0946 \\
+176 & 0.08627451 & 99.4267 & 76.3544 \\
+192 & 0.09411765 & 94.4020 & 76.5797 \\
+204 & 0.10000000 & 91.2853 & 76.7255 \\
+216 & 0.10588235 & 88.3838 & 76.8657 \\
+232 & 0.11372549 & 85.2834 & 77.0208 \\
+240 & 0.11764706 & 84.1171 & 77.0806 \\
+248 & 0.12156863 & 82.9677 & 77.1404 \\
+255 & 0.12500000 & 82.0764 & 77.1873 \\
+\bottomrule
+\end{tabular}
+\caption{Barrido ampliat Q $\rightarrow$ qualitat.}
+\end{table}
+
+Amb aquest rang ampliat, la calibració ja no deixa blocs invàlids: 1024 de 1024 blocs queden ajustats. La regressió \texttt{--target-from-q 204} continua reproduint el baseline byte a byte: \texttt{latent\_cmp=0} i \texttt{recon\_cmp=0}.
+
+Tanmateix, l'objectiu local uniforme PSNR 76.8 dB continua sense ser una política adequada. El mapa de viabilitat generat pel C mostra:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Categoria} & \textbf{Blocs} \\
+\midrule
+Objectiu assolible dins del rang Q & 150 \\
+Objectiu massa exigent fins i tot amb Q=255 & 201 \\
+Objectiu massa relaxat fins i tot amb Q=128 & 673 \\
+Calibració invàlida & 0 \\
+\bottomrule
+\end{tabular}
+\caption{Viabilitat per bloc per a un objectiu local uniforme de PSNR 76.8 dB.}
+\end{table}
+
+La reconstrucció real amb aquest Q-map queda en MSE 111.8116 i PSNR 75.8446 dB. Aquesta baixada no invalida el generador C; evidencia que imposar el mateix MSE local a tots els blocs fa baixar massa qualitat en blocs fàcils i no pot corregir completament els blocs difícils. El següent pas haurà de definir objectius locals adaptatius, per exemple preservant una qualitat mínima global o assignant objectius diferents segons dificultat/semàntica.
+
+\subsubsection{Política adaptativa per dificultat de bloc}
+
+Com a alternativa al MSE local uniforme, s'ha afegit a \texttt{sorteny\_fq\_qmap} una política \texttt{--adaptive-difficulty}. Aquesta política no força el mateix error a tots els blocs. En canvi, calcula la dificultat a partir de \texttt{mse\_at\_baseline}, normalitza aquesta dificultat en escala logarítmica i redistribueix Q al voltant d'un pressupost mitjà:
+
+\begin{equation}
+  Q_i =
+  \operatorname{round}
+  \left(
+    Q_{mean} +
+    s \cdot
+    \frac{\log(MSE_{i,baseline}) - \mu_{\log MSE}}
+    {\sigma_{\log MSE}}
+  \right)
+\end{equation}
+
+on $s$ és \texttt{--adaptive-strength}. La prova inicial manté $Q_{mean}=204$ per comparar contra el baseline constant Q=204 amb un pressupost equivalent.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrrrr}
+\toprule
+\textbf{Strength} & \textbf{Q min} & \textbf{Q max} & \textbf{Q mig} & \textbf{PSNR global} & \textbf{MSE pitjors 10} \\
+\midrule
+Q=204 base & 204 & 204 & 204.0000 & 76.7255 & 808.2446 \\
+8 & 196 & 236 & 203.9834 & 76.7471 & 802.6933 \\
+16 & 187 & 255 & 203.9336 & 76.7232 & 806.7731 \\
+24 & 179 & 255 & 203.0801 & 76.7134 & 809.0481 \\
+32 & 170 & 255 & 201.2969 & 76.6865 & 807.5981 \\
+\bottomrule
+\end{tabular}
+\caption{Comparació de política adaptativa per dificultat amb pressupost mitjà Q=204.}
+\end{table}
+
+El resultat recomanat per ara és \texttt{--adaptive-strength 8}: conserva pràcticament el mateix pressupost mitjà, millora lleugerament el PSNR global i redueix el MSE mitjà dels 10 pitjors blocs. Intensitats més agressives mouen massa qualitat fora dels blocs fàcils i degraden el resultat global.
+
+\subsubsection{Primer Q-map semàntic Sentinel-2 en C}
+
+Un cop validada la política adaptativa per dificultat, s'ha obert el Milestone C amb una utilitat C nova: \texttt{sorteny\_semantic\_qmap}. Aquesta eina manté la mateixa base adaptativa recomanada, \texttt{--q-mean 204 --adaptive-strength 8}, i hi afegeix una capa semàntica que incrementa Q en els blocs que compleixen un preset de missió.
+
+El catàleg semàntic actual conté 12 presets:
+
+\begin{itemize}
+  \item \texttt{vegetation}: NDVI, amb \texttt{B08} i \texttt{B04}.
+  \item \texttt{water}: NDMI, amb \texttt{B08} i \texttt{B11}.
+  \item \texttt{burned}: NBR, amb \texttt{B08} i \texttt{B12}.
+  \item \texttt{snow}: NDSI, amb \texttt{B03} i \texttt{B11}.
+  \item \texttt{water\_body}: NDWI, amb \texttt{B03} i \texttt{B08}.
+  \item \texttt{chlorophyll}: NDCI, amb \texttt{B05} i \texttt{B04}.
+  \item \texttt{vegetation\_green}: GNDVI, amb \texttt{B08} i \texttt{B03}.
+  \item \texttt{clouds}: detecció CBY amb \texttt{B03}, \texttt{B04} i filtre opcional \texttt{B11}.
+  \item \texttt{barren\_soil}: BSI, amb \texttt{B02}, \texttt{B04}, \texttt{B08} i \texttt{B11}.
+  \item \texttt{burned\_area}: BAIS2, amb \texttt{B04}, \texttt{B06}, \texttt{B07}, \texttt{B8A} i \texttt{B12}.
+  \item \texttt{uniform}: sense semàntica, útil com a control.
+  \item \texttt{manual}: ROI de blocs proporcionada pel segment terrestre.
+\end{itemize}
+
+La utilitat defineix internament la taula Sentinel-2 completa de 13 bandes: \texttt{B01}, \texttt{B02}, \texttt{B03}, \texttt{B04}, \texttt{B05}, \texttt{B06}, \texttt{B07}, \texttt{B08}, \texttt{B8A}, \texttt{B09}, \texttt{B10}, \texttt{B11} i \texttt{B12}. Per a la imatge canònica actual de 8 bandes s'utilitza de manera explícita el layout limitat \texttt{sentinel2-8}, interpretat com \texttt{B02}, \texttt{B03}, \texttt{B04}, \texttt{B05}, \texttt{B06}, \texttt{B07}, \texttt{B08}, \texttt{B8A}. Això permet provar formalment \texttt{vegetation}, \texttt{water\_body}, \texttt{chlorophyll}, \texttt{vegetation\_green}, \texttt{clouds}, \texttt{uniform} i \texttt{manual}. Els presets que requereixen \texttt{B11} o \texttt{B12} registren \texttt{missing\_bands} fins disposar d'entrades Sentinel-2 completes. En \texttt{clouds}, quan \texttt{B11} no existeix, s'utilitza la versió CBY bàsica amb \texttt{B03} i \texttt{B04}; la validació robusta de núvols queda pendent d'un dataset adequat.
+
+El primer checkpoint s'ha generat a \texttt{output/checkpoints/20260508\_semantic\_qmap\_c}. La configuració és:
+
+\begin{lstlisting}[language=bash]
+./sorteny_semantic_qmap \
+  --input data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  --calibration output/checkpoints/20260507_c_fixed_quality_qmap_wide/fq_calibration.tsv \
+  --preset vegetation \
+  --output-qmap output/checkpoints/20260508_semantic_qmap_c/qmap_semantic_vegetation.bin \
+  --summary-tsv output/checkpoints/20260508_semantic_qmap_c/semantic_vegetation_summary.tsv \
+  --bands 8 --height 512 --width 512 \
+  --band-layout sentinel2-8 \
+  --q-mean 204 --adaptive-strength 8 --semantic-boost 8
+\end{lstlisting}
+
+El Q-map generat ocupa 1024 bytes, té rang Q=196--236, Q mitjà 204.8271 i 41 valors Q diferents. El preset \texttt{vegetation} aplica boost en 108 de 1024 blocs. El valor mitjà de NDVI en tots els blocs és 0.3198, mentre que en els blocs amb boost és 0.4208.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Política} & \textbf{Boosts} & \textbf{Q min} & \textbf{Q max} & \textbf{MSE global} & \textbf{PSNR global} \\
+\midrule
+Q=204 constant & 0 & 204 & 204 & 91.2853 & 76.7255 dB \\
+Adaptativa s=8 & 0 & 196 & 236 & 90.8311 & 76.7471 dB \\
+Semàntica vegetation & 108 & 196 & 236 & 90.6000 & 76.7582 dB \\
+\bottomrule
+\end{tabular}
+\caption{Primer resultat del Q-map semàntic Sentinel-2 en C.}
+\end{table}
+
+La prova mostra que la capa semàntica és funcional i compatible amb el pipeline actual: \texttt{sorteny\_semantic\_qmap} genera el Q-map, \texttt{sorteny\_compressor} l'incorpora al bitstream i \texttt{sorteny\_decompressor} reconstrueix correctament amb el Q-map variable. El MSE mitjà dels 10 pitjors blocs es manté en 802.6933, igual que la política adaptativa s=8, perquè els blocs amb NDVI més alt no coincideixen necessàriament amb els blocs de reconstrucció més difícil. Aquesta observació és important: la semàntica no substitueix la dificultat de compressió, sinó que introdueix una preferència de missió.
+
+També s'ha executat una prova limitada amb \texttt{--preset water}. Amb la imatge actual de 8 bandes, \texttt{B11} no està disponible; per tant, els 1024 blocs queden registrats com \texttt{missing\_bands} i el mapa resultant equival a la política adaptativa sense boost semàntic. Això és el comportament esperat fins treballar amb imatges Sentinel-2 completes.
+
+\subsubsection{Validació local del preset \texttt{vegetation}}
+
+Per comprovar que la semàntica millora la qualitat on realment ho demana el preset, s'ha executat un barrido local amb la ruta final en C. La base continua sent \texttt{--q-mean 204 --adaptive-strength 8}; només es varien el llindar NDVI i el boost semàntic:
+
+\begin{itemize}
+  \item Llindars NDVI: 0.35, 0.40 i 0.45.
+  \item Boosts Q: 4, 8, 12 i 16.
+  \item Checkpoint: \texttt{output/checkpoints/20260509\_semantic\_validation\_vegetation}.
+\end{itemize}
+
+Cada candidat genera un Q-map de 1024 bytes, comprimeix, descomprimeix i calcula qualitat global i qualitat per blocs. La comparació local es fa contra la política \texttt{adaptive\_difficulty s=8} sobre els mateixos blocs marcats pel preset.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrrrr}
+\toprule
+\textbf{NDVI} & \textbf{Boost} & \textbf{Blocs sem.} & \textbf{Q mig} & \textbf{$\Delta$ PSNR sem.} & \textbf{PSNR global} \\
+\midrule
+0.35 & 16 & 529 & 212.2490 & +0.3128 dB & 76.8381 dB \\
+0.40 & 8 & 108 & 204.8271 & +0.1796 dB & 76.7582 dB \\
+0.40 & 16 & 108 & 205.6709 & +0.3458 dB & 76.7681 dB \\
+0.45 & 16 & 12 & 204.1709 & +0.4060 dB & 76.7512 dB \\
+\bottomrule
+\end{tabular}
+\caption{Candidats destacats del barrido de validació semàntica NDVI.}
+\end{table}
+
+El millor guany local pur apareix amb NDVI 0.45 i boost 16, però només afecta 12 blocs. Per evitar una màscara massa estreta, s'ha fixat una regla de selecció més operativa: almenys 64 blocs semàntics i sobrecost de Q mitjà inferior o igual a 2 punts respecte a \texttt{adaptive\_difficulty s=8}. Amb aquesta regla, el candidat recomanat per ara és:
+
+\begin{center}
+\texttt{--threshold 0.40 --semantic-boost 16}
+\end{center}
+
+Aquest candidat actua sobre 108 blocs, manté \texttt{q\_mean=205.6709}, millora la regió semàntica en +0.3458 dB respecte a \texttt{adaptive\_difficulty s=8} i obté PSNR global 76.7681 dB. El MSE mitjà dels 10 pitjors blocs es manté en 802.6933, de manera que la millora semàntica no empitjora els pitjors blocs detectats per la política de dificultat.
+
+\subsubsection{Política de focus: qualitat alta en ROI i degradació del fons}
+
+La política anterior, \texttt{boost-only}, només incrementa Q en la vegetació. Això demostra control semàntic, però no explota encara la idea de missió: conservar la zona útil i degradar explícitament la resta per facilitar la compressió futura. Per això s'ha afegit a \texttt{sorteny\_semantic\_qmap} una segona política:
+
+\begin{center}
+\texttt{--semantic-policy focus}
+\end{center}
+
+En aquesta política, els blocs que compleixen el preset reben un \texttt{foreground\_boost}, mentre que els blocs de fons reben un \texttt{background\_penalty}. El format de bitstream no canvia; només canvia el Q-map generat.
+
+El checkpoint \texttt{output/checkpoints/20260510\_semantic\_focus\_vegetation} executa un barrido amb NDVI 0.40:
+
+\begin{itemize}
+  \item \texttt{foreground\_boost}: 8 i 16.
+  \item \texttt{background\_penalty}: 16, 24, 32 i 48.
+  \item ROI: 108 blocs de vegetació.
+  \item Fons: 916 blocs no semàntics.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrrrrr}
+\toprule
+\textbf{FG} & \textbf{BG} & \textbf{Q mig} & \textbf{Q ROI} & \textbf{Q fons} & \textbf{PSNR ROI} & \textbf{PSNR fons} \\
+\midrule
+16 & 16 & 191.3584 & 217.0833 & 188.3253 & 79.4547 & 76.3266 \\
+16 & 24 & 184.2021 & 217.0833 & 180.3253 & 79.4603 & 76.2334 \\
+16 & 32 & 177.0459 & 217.0833 & 172.3253 & 79.4413 & 76.1010 \\
+16 & 48 & 162.7334 & 217.0833 & 156.3253 & 79.4021 & 75.8527 \\
+\bottomrule
+\end{tabular}
+\caption{Política focus per a vegetació: qualitat alta en ROI i penalització del fons.}
+\end{table}
+
+El candidat recomanat per defecte és:
+
+\begin{center}
+\texttt{--semantic-policy focus --foreground-boost 16 --background-penalty 24}
+\end{center}
+
+Aquest punt manté la ROI millor que \texttt{adaptive\_difficulty s=8} (+0.3112 dB), degrada el fons de manera mesurable (-0.3015 dB), redueix el Q mitjà global de 205.6709 en el mode \texttt{boost-only} a 184.2021, i redueix la complexitat estadística dels latents. També s'ha conservat un perfil agressiu \texttt{background\_penalty=48}, amb Q mitjà 162.7334 i entropia empírica de latents menor, però amb una degradació global més forta.
+
+La reducció real d'amplada de banda no es pot reclamar encara perquè el bitstream continua guardant latents \texttt{int32} sense codificació entròpica. El resultat sí que és rellevant: el Q-map focus genera latents potencialment més fàcils de codificar quan s'integri el codificador entròpic.
+
+\subsubsection{Fons fix a Q baix: aproximació a ``buidar'' informació no rellevant}
+
+Per aproximar millor la idea de desenfocar o eliminar informació del fons, s'ha afegit a \texttt{sorteny\_semantic\_qmap} l'opció \texttt{--background-q}. Aquesta opció fixa directament el Q dels blocs no semàntics, en lloc de restar una penalització al Q adaptatiu. Això permet forçar el fons a valors baixos com Q=128 i mesurar si els latents es tornen més fàcils de codificar.
+
+El checkpoint \texttt{output/checkpoints/20260511\_semantic\_background\_q\_vegetation} compara penalitzacions fortes i Q fixos de fons:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Mode} & \textbf{Q mig} & \textbf{Q fons} & \textbf{PSNR ROI} & \textbf{PSNR fons} & \textbf{Zeros lat.} & \textbf{Entropia} \\
+\midrule
+focus bg24 & 184.2021 & 180.3253 & 79.4603 & 76.2334 & 40.19\% & 4.4872 \\
+penalty 64 & 148.4209 & 140.3253 & 79.3506 & 75.5015 & 41.65\% & 4.2736 \\
+bgQ 160 & 166.0205 & 160.0000 & 79.4387 & 75.9099 & 40.93\% & 4.3768 \\
+bgQ 144 & 151.7080 & 144.0000 & 79.3804 & 75.5874 & 41.53\% & 4.2880 \\
+bgQ 128 & 137.3955 & 128.0000 & 79.3240 & 75.1999 & 42.20\% & 4.1913 \\
+\bottomrule
+\end{tabular}
+\caption{Degradació agressiva del fons com a proxy de compressibilitat futura.}
+\end{table}
+
+El cas \texttt{--background-q 128} és el més agressiu: manté la ROI per sobre de la política adaptativa base (+0.1749 dB), degrada clarament el fons (-1.3350 dB), baixa el Q mitjà a 137.3955, puja el percentatge de zeros latents a 42.20\% i redueix l'entropia empírica a 4.1913 bits per símbol. Aquesta és la primera evidència clara que eliminar qualitat del fons concentra la informació i prepara millor el latente per a codificació entròpica.
+
+Cal remarcar que el fitxer de sortida encara no redueix mida perquè el format actual escriu tots els latents com \texttt{int32}. L'efecte observat és estadístic: més zeros i menys entropia, que són les condicions que haurà d'aprofitar el futur codificador.
+
+\subsubsection{Paquet d'evidència visual i estadística del focus}
+
+Per deixar aquesta conclusió en forma auditable, s'ha creat un paquet d'evidència a \texttt{output/checkpoints/20260512\_focus\_evidence\_report}. Aquest checkpoint no introdueix cap canvi en el pipeline C: només llegeix artefactes ja generats i creua Q-map, NDVI, qualitat local i estadística de latents.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/build_focus_evidence_report.py \
+  --output-dir output/checkpoints/20260512_focus_evidence_report
+\end{lstlisting}
+
+Els artefactes principals són:
+\begin{itemize}
+  \item \texttt{focus\_evidence\_summary.json}, \texttt{.csv} i \texttt{.md}.
+  \item \texttt{block\_evidence.csv}, amb NDVI, ROI/fons, Q i qualitat per bloc.
+  \item \texttt{latent\_histograms.csv}, amb distribució empírica dels latents.
+  \item Mapes \texttt{PGM/PPM} a resolució latent $32 \times 32$ i ampliats a $512 \times 512$.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Política} & \textbf{Q mig} & \textbf{PSNR global} & \textbf{PSNR ROI} & \textbf{PSNR fons} & \textbf{Zeros lat.} & \textbf{Entropia} \\
+\midrule
+Q=204 & 204.0000 & 76.7255 & 79.1988 & 76.5086 & 39.56\% & 4.5838 \\
+Adaptatiu s=8 & 203.9834 & 76.7471 & 79.1491 & 76.5349 & 39.51\% & 4.5902 \\
+Boost-only & 205.6709 & 76.7681 & 79.4949 & 76.5357 & 39.46\% & 4.5982 \\
+Focus bgQ128 & 137.3955 & 75.4902 & 79.3240 & 75.1999 & 42.20\% & 4.1913 \\
+\bottomrule
+\end{tabular}
+\caption{Evidència agregada del focus semàntic de vegetació.}
+\end{table}
+
+El paquet confirma que \texttt{focus bgQ128} manté la ROI per sobre de l'adaptatiu s=8 (+0.1749 dB), degrada el fons (-1.3350 dB), redueix fortament el pressupost mitjà de Q i fa que els latents siguin estadísticament més simples: més zeros i menys entropia. Aquesta és la forma correcta d'interpretar el ``desenfocament'' de fons en aquesta fase: encara no redueix bytes de fitxer, però prepara les condicions perquè el codificador entròpic futur pugui aprofitar-ho.
+
+\subsubsection{Mapeig flexible de bandes i ROI manual}
+
+Per preparar el sistema per datasets futurs amb més o menys bandes, s'ha ampliat \texttt{sorteny\_semantic\_qmap} amb un mapatge explícit de bandes:
+
+\begin{lstlisting}[language=bash]
+./sorteny_semantic_qmap \
+  --input data/Sentinel2A_crop_test/T31TCH_20230907T104629_35.8_512_512_2_1_0.raw \
+  --calibration output/checkpoints/20260507_c_fixed_quality_qmap_wide/fq_calibration.tsv \
+  --preset vegetation \
+  --semantic-policy focus \
+  --foreground-boost 16 \
+  --background-q 128 \
+  --threshold 0.40 \
+  --band-map output/checkpoints/20260513_sentinel2a_8band_dataset_validation/sentinel2_8_band_map.tsv \
+  --output-qmap output/qmap_vegetation_band_map.bin \
+  --summary-tsv output/qmap_vegetation_band_map.tsv
+\end{lstlisting}
+
+El fitxer \texttt{--band-map} és un TSV amb parelles \texttt{band\_name,index}. Això permet mantenir els presets Sentinel-2 complets a nivell de codi: quan en el futur hi hagi \texttt{B11} i \texttt{B12}, \texttt{water}, \texttt{burned} i \texttt{snow} podran calcular els seus índexs sense canviar la interfície. Amb el dataset actual de 8 bandes, aquests presets registren \texttt{missing\_bands} i no inventen una màscara semàntica.
+
+També s'ha afegit un mode de focus manual:
+
+\begin{lstlisting}[language=bash]
+python3 src/python/utils/generate_roi_map.py \
+  output/roi_manual_center.bin \
+  --pattern center \
+  --output-tsv output/roi_manual_center.tsv
+
+./sorteny_semantic_qmap \
+  --calibration output/checkpoints/20260507_c_fixed_quality_qmap_wide/fq_calibration.tsv \
+  --preset manual \
+  --semantic-policy focus \
+  --foreground-boost 16 \
+  --background-q 128 \
+  --roi-map output/roi_manual_center.bin \
+  --output-qmap output/qmap_manual_focus.bin \
+  --summary-tsv output/qmap_manual_focus.tsv
+\end{lstlisting}
+
+En aquest mode, el segment terrestre pot seleccionar blocs concrets de la imatge sense dependre de cap índex radiomètric. El checkpoint \texttt{output/checkpoints/20260514\_manual\_roi\_focus} valida una ROI central de 256 blocs, confirma equivalència byte a byte entre \texttt{--roi-map} i \texttt{--roi-tsv}, i genera un bitstream compatible amb el decoder actual.
+
+\subsubsection{Validació batch amb dataset Sentinel-2A de 8 bandes}
+
+S'ha incorporat el dataset \texttt{data/Sentinel2A\_crop\_test}, format per 120 crops RAW BSQ \texttt{uint16} de 8 bandes i $512 \times 512$ píxels. La validació batch queda a \texttt{output/checkpoints/20260513\_sentinel2a\_8band\_dataset\_validation}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Mètrica} & \textbf{Valor} \\
+\midrule
+RAW validats & 120/120 \\
+Band-map equivalent a \texttt{sentinel2-8} & Sí \\
+Mitjana de blocs ROI vegetation & 220.66 \\
+Màxim de blocs ROI vegetation & 1015 \\
+\texttt{water/burned/snow} amb 8 bandes & 1024 \texttt{missing\_bands} \\
+Smoke PSNR & 78.1528 dB \\
+Smoke zeros latents & 39.29\% \\
+Smoke entropia & 4.9060 bits/símbol \\
+\bottomrule
+\end{tabular}
+\caption{Validació del dataset Sentinel-2A de 8 bandes.}
+\end{table}
+
+Aquest resultat amplia l'evidència més enllà d'una sola imatge: el generador C de Q-map pot processar un conjunt de crops, mantenir el contracte de 8 bandes del model actual i deixar preparat el camí per a datasets de 13 bandes quan estiguin disponibles.
+
+\subsubsection{Auditoria reproduïble del catàleg de presets}
+
+Després d'ampliar el catàleg semàntic, s'ha creat el checkpoint \texttt{output/checkpoints/20260515\_semantic\_preset\_catalog\_audit}. L'objectiu és acceptar els 12 presets només si es poden executar de manera reproduïble amb la ruta C, generen Q-maps de 1024 bytes i registren explícitament les bandes absents quan el dataset de 8 bandes no conté \texttt{B11} o \texttt{B12}.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/audit_semantic_presets.py \
+  --output-dir output/checkpoints/20260515_semantic_preset_catalog_audit
+\end{lstlisting}
+
+La prova executa tots els presets sobre la imatge canònica i sobre els 120 RAW del dataset \texttt{Sentinel2A\_crop\_test}. Només es fa un pipeline complet de compressió/descompressió per a un preset representatiu, \texttt{clouds}, per evitar convertir la validació del catàleg en un benchmark massiu.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Preset} & \textbf{Blocs canònics} & \textbf{Missing canònic} & \textbf{Mitjana blocs dataset} & \textbf{Q mig dataset} \\
+\midrule
+\texttt{vegetation} & 108 & 0 & 220.66 & 205.7073 \\
+\texttt{water} & 0 & 1024 & 0.00 & 203.9834 \\
+\texttt{burned} & 0 & 1024 & 0.00 & 203.9834 \\
+\texttt{snow} & 0 & 1024 & 0.00 & 203.9834 \\
+\texttt{water\_body} & 0 & 0 & 0.01 & 203.9835 \\
+\texttt{chlorophyll} & 0 & 0 & 11.93 & 204.0766 \\
+\texttt{vegetation\_green} & 14 & 0 & 155.15 & 205.1955 \\
+\texttt{clouds} & 144 & 0 & 364.54 & 206.8314 \\
+\texttt{barren\_soil} & 0 & 1024 & 0.00 & 203.9834 \\
+\texttt{burned\_area} & 0 & 1024 & 0.00 & 203.9834 \\
+\texttt{uniform} & 0 & 0 & 0.00 & 203.9834 \\
+\texttt{manual} & 256 & 0 & 256.00 & 205.9834 \\
+\bottomrule
+\end{tabular}
+\caption{Auditoria del catàleg semàntic sobre la imatge canònica i el dataset de 120 crops.}
+\end{table}
+
+Les validacions clau han passat: tots els Q-maps tenen 1024 bytes, \texttt{vegetation} és byte-identical respecte al checkpoint anterior equivalent, \texttt{--band-map} torna a coincidir byte a byte amb \texttt{sentinel2-8}, i els presets amb dependència de \texttt{B11}/\texttt{B12} no inventen resultats. El smoke complet amb \texttt{clouds} obté PSNR 76.7709 dB, 39.45\% de zeros latents i entropia empírica 4.5974 bits/símbol. Aquest resultat consolida el catàleg com a interfície reproduïble; no és encara una validació científica definitiva de tots els detectors semàntics.
+
+\subsubsection{Verificació de la fórmula del paper i evidència de latents}
+
+Per tancar la coherència matemàtica de la qualitat fixa local, s'ha creat el checkpoint \texttt{output/checkpoints/20260516\_formula\_and\_latent\_coding\_evidence}. Aquest increment no modifica el pipeline C ni el format de bitstream; només audita els artefactes ja generats i compara el comportament real amb el model del paper.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/verify_fq_formula_and_latents.py \
+  --output-dir output/checkpoints/20260516_formula_and_latent_coding_evidence
+\end{lstlisting}
+
+La correspondència usada amb el paper és:
+
+\begin{align}
+  c_0 &\simeq MSE_0 \\
+  c_1 &\simeq \frac{\alpha MSE_0}{4} \\
+  M(\lambda) &= \text{\texttt{mod\_a}}\lambda + \text{\texttt{mod\_b}}
+\end{align}
+
+Això converteix l'expressió empírica del paper en el model implementat:
+
+\begin{equation}
+  MSE \simeq c_0 + \frac{c_1}{M(\lambda)^2}
+\end{equation}
+
+La recomputació independent en Python dels Q-maps generats per C confirma que no hi ha desviació de fórmula o arrodoniment en els casos principals:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Cas} & \textbf{Coincidència byte a byte} & \textbf{Blocs diferents} & \textbf{Q mig} \\
+\midrule
+\texttt{target\_from\_q\_204} & Sí & 0 & 204.0000 \\
+\texttt{target\_psnr\_76\_8} & Sí & 0 & 157.2510 \\
+\texttt{adaptive\_difficulty\_s8} & Sí & 0 & 203.9834 \\
+\bottomrule
+\end{tabular}
+\caption{Recomputació independent dels Q-maps de \texttt{sorteny\_fq\_qmap}.}
+\end{table}
+
+Sobre el barrido ampliat de Q, el model conserva la monotonia global esperada: Q més alt implica MSE global menor i PSNR global major. L'error de predicció agregat queda en MAE de MSE 2.1486, RMSE de MSE 3.7390 i $R^2=0.998984$ sobre tots els punts bloc/Q. El $R^2$ mitjà per bloc des de la calibració és 0.954571. Per bloc individual no s'exigeix monotonia perfecta: 153 de 1024 blocs són estrictament monòtons i 871 presenten alguna inversió local, coherent amb soroll local, saturacions i efectes no lineals del pipeline. El criteri correcte és la coherència global i l'error predictiu baix, no la monotonia estricta de cada bloc.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrrr}
+\toprule
+\textbf{Q} & \textbf{MSE real} & \textbf{MSE predit} & \textbf{Error PSNR pred.-real} & \textbf{$R^2$ blocs} \\
+\midrule
+128 & 125.1939 & 124.9640 & 0.0080 & 0.9990 \\
+204 & 91.2853 & 91.1996 & 0.0041 & 0.9992 \\
+255 & 82.0764 & 81.8919 & 0.0098 & 0.9992 \\
+\bottomrule
+\end{tabular}
+\caption{Mostra de la predicció del model de qualitat fixa sobre el barrido Q.}
+\end{table}
+
+La segona part del checkpoint mesura si les polítiques de focus creen latents més favorables per al codificador entròpic futur. Aquí ``capes'' s'interpreta com canals o mapes latents finals amb forma conceptual \texttt{band x latent\_channel x 32 x 32}; no són dumps interns de capes convolucionals, perquè aquests dumps són legacy i no formen part del pipeline optimitzat.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Política} & \textbf{Q mig} & \textbf{Zeros} & \textbf{Entropia} & \textbf{Bits ideals} & \textbf{zlib bps} \\
+\midrule
+\texttt{q204} & 204.0000 & 39.5622\% & 4.5838 & 6.8757 & 8.9156 \\
+\texttt{adaptive\_s8} & 203.9834 & 39.5075\% & 4.5902 & 6.8853 & 8.9476 \\
+\texttt{vegetation\_boost} & 205.6709 & 39.4638\% & 4.5982 & 6.8973 & 8.9636 \\
+\texttt{focus\_bgq128} & 137.3955 & 42.1979\% & 4.1913 & 6.2869 & 8.1391 \\
+\texttt{clouds} & 205.1084 & 39.4549\% & 4.5974 & 6.8962 & 8.9673 \\
+\bottomrule
+\end{tabular}
+\caption{Proxy estadístic de codificabilitat dels latents finals.}
+\end{table}
+
+La conclusió és clara per al cas de focus agressiu: \texttt{focus\_bgq128} augmenta els zeros respecte a \texttt{adaptive\_s8} en 2.6904 punts percentuals, redueix l'entropia empírica en 0.3989 bits/símbol, redueix els bits ideals estimats en 0.5983 bits per mostra d'entrada i millora el proxy \texttt{zlib} en 0.8085 bps. Això confirma la hipòtesi estadística: degradar el fons no redueix encara el fitxer, perquè els latents s'escriuen com \texttt{int32}, però sí crea una distribució més simple que un codificador entròpic podrà aprofitar.
+
+\subsubsection{Auditoria MCOS 2024 i correcció dels histogrames de latents}
+
+S'ha revisat el projecte extern \texttt{Prueba Extra NO GIT/mcos2024-production} com a referència de contrast del paper. La conclusió és que MCOS és útil per auditar la fórmula i el criteri de saturació, però no s'ha d'integrar com a dependència del pipeline SORTENY C: utilitza TensorFlow, TensorFlow Compression, hyperprior i models d'entropia, mentre que la ruta actual en Raspberry continua sent C i sense codificador entròpic final.
+
+La correspondència teòrica principal queda alineada:
+
+\begin{equation}
+  MSE \simeq MSE_0 + \frac{\alpha MSE_0}{4M(\lambda)^2}
+  \quad \Longleftrightarrow \quad
+  MSE \simeq c_0 + \frac{c_1}{(\text{\texttt{mod\_a}}\lambda + \text{\texttt{mod\_b}})^2}
+\end{equation}
+
+També s'ha revisat l'experiment de l'equip sobre histogrames de latents. El script antic llegia tot el bitstream com \texttt{int32} i saltava 258 enters, però el format real és una capçalera de 10 bytes, un Q-map de 1024 bytes i després latents \texttt{int32}. Això desalineava els valors i produïa desviacions estàndard artificials de milions. S'ha corregit \texttt{scripts/experiments/exp3\_latent\_histograms.py} per parsejar el bitstream real i guardar la sortida a \texttt{output/experiments/exp3\_latent\_histograms\_fixed}.
+
+\begin{lstlisting}[language=bash]
+python3 scripts/experiments/exp3_latent_histograms.py \
+  --output-dir output/experiments/exp3_latent_histograms_fixed
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Política} & \textbf{Std} & \textbf{|mitjana|} & \textbf{Zeros} & \textbf{Entropia} & \textbf{zlib bps} \\
+\midrule
+\texttt{constant\_q204} & 52.3110 & 12.1026 & 39.5622\% & 4.5838 & 8.9156 \\
+\texttt{fq\_adaptive} & 56.7778 & 11.0414 & 41.1351\% & 4.3462 & 8.5570 \\
+\texttt{semantic\_veg\_boost8} & 55.0311 & 12.3682 & 39.4852\% & 4.5942 & 8.9561 \\
+\texttt{focus\_fg8\_bg48} & 44.8387 & 10.0914 & 41.0467\% & 4.3597 & 8.4868 \\
+\texttt{focus\_bgq128} & 36.3995 & 8.5552 & 42.1979\% & 4.1913 & 8.1391 \\
+\texttt{focus\_pen96} & 36.6829 & 8.5774 & 42.1898\% & 4.1927 & 8.1434 \\
+\bottomrule
+\end{tabular}
+\caption{Histogrames de latents corregits amb parser alineat al format real del bitstream.}
+\end{table}
+
+La conclusió qualitativa dels experiments de l'equip es manté després de la correcció: \texttt{focus\_bgq128} redueix la desviació estàndard un 30.42\%, redueix la mitjana absoluta un 29.31\%, augmenta els zeros en 2.6357 punts percentuals i baixa l'entropia de 4.5838 a 4.1913 bits/símbol respecte al baseline Q=204. El canvi important és metodològic: els valors antics de l'experiment 3 no s'han d'utilitzar en informes finals. L'experiment \texttt{gzip} continua sent un proxy vàlid, però s'ha de descriure com a \texttt{gzip -9} sobre el bitstream SORTENY complet, no sobre latents aïllats.
+
+\subsubsection{Demostració reproduïble de funcionament correcte}
+
+Per convertir les evidències anteriors en una prova compacta i repetible, s'ha creat el checkpoint \texttt{output/checkpoints/20260517\_correct\_functioning\_demo}. Aquest paquet executa de principi a fi la ruta C per a tres polítiques:
+
+\begin{itemize}
+  \item \texttt{q204}: Q-map constant generat amb \texttt{sorteny\_fq\_qmap}.
+  \item \texttt{adaptive\_s8}: Q-map adaptatiu per dificultat, amb \texttt{--q-mean 204 --adaptive-strength 8}.
+  \item \texttt{vegetation\_focus\_bgq128}: Q-map semàntic en C, amb \texttt{--preset vegetation --semantic-policy focus --foreground-boost 16 --background-q 128 --threshold 0.40}.
+\end{itemize}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/build_correctness_demo.py \
+  --output-dir output/checkpoints/20260517_correct_functioning_demo
+\end{lstlisting}
+
+El script només orquestra i analitza; la generació dels Q-maps continua en C. Per cada política es genera Q-map, bitstream, reconstrucció, qualitat global, qualitat ROI/fons, estadística de latents i mapes visuals \texttt{PGM/PPM} a $32 \times 32$ i $512 \times 512$.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Política} & \textbf{Q mig} & \textbf{PSNR global} & \textbf{PSNR ROI} & \textbf{PSNR fons} & \textbf{Zeros} & \textbf{Entropia} \\
+\midrule
+\texttt{q204} & 204.0000 & 76.7255 & 79.1988 & 76.5087 & 39.56\% & 4.5838 \\
+\texttt{adaptive\_s8} & 203.9834 & 76.7471 & 79.1491 & 76.5349 & 39.51\% & 4.5902 \\
+\texttt{vegetation\_focus\_bgq128} & 137.3955 & 75.4902 & 79.3239 & 75.1999 & 42.20\% & 4.1913 \\
+\bottomrule
+\end{tabular}
+\caption{Demo reproduïble local: Q constant, adaptatiu i focus semàntic.}
+\end{table}
+
+La demostració satisfà els criteris d'acceptació: \texttt{q204} conserva la referència amb PSNR 76.7255 dB; \texttt{vegetation\_focus\_bgq128} manté la ROI per sobre de \texttt{adaptive\_s8} (+0.1748 dB), degrada el fons (-1.3350 dB), redueix el Q mitjà global de 203.9834 a 137.3955, incrementa els zeros latents en 2.6904 punts percentuals i redueix l'entropia empírica en 0.3989 bits/símbol. Aquest és el paquet de demostració principal per explicar el funcionament correcte local. La revalidació en Raspberry Pi 3B+ queda pendent fins recuperar accés SSH i condicions tèrmiques fiables.
+
+\subsubsection{Validació matemàtica PSNR/MSE sobre dataset Sentinel-2A}
+
+Per demostrar matemàticament la ruta de qualitat fixa sobre més d'una imatge, s'ha afegit el validador \texttt{src/python/analysis/validate\_target\_psnr\_dataset.py}. Aquest script no decideix Q en Python: només orquestra proves. La conversió de l'objectiu de qualitat continua passant per \texttt{sorteny\_fq\_qmap} en C.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/validate_target_psnr_dataset.py \
+  --output-dir output/checkpoints/20260518_target_psnr_dataset_validation
+\end{lstlisting}
+
+La prova completa prevista recorre els 120 crops de \texttt{data/Sentinel2A\_crop\_test} i els objectius PSNR 74.5, 75.0, 75.5, 76.0, 76.5, 76.8, 77.0 i 77.5 dB. Per cada cas es calcula:
+\begin{enumerate}
+  \item \textbf{PSNR objectiu} $\rightarrow$ \textbf{MSE objectiu}, amb
+  \begin{equation}
+    MSE_{target} = \frac{65535^2}{10^{PSNR_{target}/10}}.
+  \end{equation}
+  \item \textbf{MSE objectiu} $\rightarrow$ \textbf{Q-map}, amb el model calibrat per bloc.
+  \item \textbf{Q-map} $\rightarrow$ \textbf{compressió/descompressió C}.
+  \item \textbf{Reconstrucció real} $\rightarrow$ \textbf{MSE i PSNR assolits}.
+\end{enumerate}
+
+La mateixa eina també recalibra una mostra de 5 crops representatius amb Q=128,144,160,176,192,204,216,232,240,248,255. Això permet separar dos efectes: l'error propi del model del paper i l'error de generalització quan una calibració obtinguda en una imatge s'aplica a altres crops.
+
+Com que la validació completa implica 960 execucions de pipeline més barridos de recalibratge, primer s'ha executat un smoke reduït a \texttt{output/checkpoints/20260518\_target\_psnr\_dataset\_validation\_smoke}:
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/validate_target_psnr_dataset.py \
+  --output-dir output/checkpoints/20260518_target_psnr_dataset_validation_smoke \
+  --max-crops 1 \
+  --targets 74.5 76.8 \
+  --recalibrate-count 1 \
+  --keep-artifacts sample
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Mode} & \textbf{Target} & \textbf{PSNR real} & \textbf{Error abs.} & \textbf{Blocs assolibles} & \textbf{Q mig} \\
+\midrule
+\texttt{fixed} & 74.5 & 75.3973 & 0.8973 & 5.27\% & 146.6709 \\
+\texttt{fixed} & 76.8 & 75.5479 & 1.2521 & 14.65\% & 157.2510 \\
+\texttt{recalibrated} & 74.5 & 75.3558 & 0.8558 & 20.21\% & 137.8135 \\
+\texttt{recalibrated} & 76.8 & 76.4506 & 0.3494 & 63.48\% & 197.4580 \\
+\bottomrule
+\end{tabular}
+\caption{Smoke de validació target PSNR sobre un crop del dataset Sentinel-2A.}
+\end{table}
+
+La conclusió inicial és útil: el procediment complet funciona i no presenta violacions de monotonia en el smoke. La recalibració per crop redueix l'error absolut mitjà de 1.0747 dB a 0.6026 dB. Això suggereix que una part important de l'error prové de la generalització de la calibració canònica a altres crops, no necessàriament d'una incoherència matemàtica de la fórmula. Els objectius amb molts blocs saturats a Q=128 o Q=255 s'han de tractar com a parcialment fora de rang, no com a fallades silencioses.
+
+\subsubsection{Demostració dels tres significats de PSNR objectiu}
+
+Per evitar confondre objectiu local, objectiu global i objectiu semàntic, s'ha creat el checkpoint \texttt{output/checkpoints/20260519\_psnr\_objective\_modes\_demo}. La prova utilitza 3 crops representatius del dataset Sentinel-2A i els objectius 74.5, 76.8 i 77.5 dB.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/demonstrate_psnr_objectives.py \
+  --output-dir output/checkpoints/20260519_psnr_objective_modes_demo \
+  --max-crops 3 \
+  --targets 74.5 76.8 77.5
+\end{lstlisting}
+
+El primer cas interpreta el PSNR objectiu com a \textbf{objectiu local per bloc}. Això executa \texttt{sorteny\_fq\_qmap --target-psnr} i mesura l'error de cada bloc contra el MSE objectiu. El resultat mostra que molts blocs queden fora de rang:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrrrr}
+\toprule
+\textbf{Target} & \textbf{Casos} & \textbf{PSNR global mig} & \textbf{Error bloc mig} & \textbf{Blocs assolibles} & \textbf{Q128/Q255} \\
+\midrule
+74.5 & 3 & 75.8155 & 1.8460 & 5.27\% & 839 / 131 \\
+76.8 & 3 & 75.9903 & 1.3678 & 14.65\% & 676 / 201 \\
+77.5 & 3 & 76.1313 & 1.6199 & 35.55\% & 441 / 229 \\
+\bottomrule
+\end{tabular}
+\caption{Objectiu local per bloc: l'objectiu PSNR no equival a PSNR global.}
+\end{table}
+
+El segon cas interpreta el PSNR com a \textbf{objectiu global de la imatge}. Python només fa una cerca de Q constant i executa el pipeline C en cada intent; la mesura final continua sent la reconstrucció real:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrrr}
+\toprule
+\textbf{Target} & \textbf{Casos} & \textbf{PSNR assolit mig} & \textbf{Error abs. mig} & \textbf{Assolit / saturat} \\
+\midrule
+74.5 & 3 & 75.5387 & 1.0387 & 0 / 3 \\
+76.8 & 3 & 76.8220 & 0.0220 & 3 / 0 \\
+77.5 & 3 & 77.4259 & 0.1060 & 2 / 1 \\
+\bottomrule
+\end{tabular}
+\caption{Objectiu global: es busca el PSNR mitjà de la imatge, no el mateix PSNR per bloc.}
+\end{table}
+
+El tercer cas és el més important per al projecte: \textbf{objectiu semàntic ROI/fons}. Es compara Q=204, adaptatiu \texttt{s=8}, focus amb fons a Q=128 i focus amb penalització 24. Aquí el PSNR global pot baixar sense ser un error, perquè l'èxit es mesura per ROI, fons i latents:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Política} & \textbf{PSNR global} & \textbf{PSNR ROI} & \textbf{PSNR fons} & \textbf{Q mig} & \textbf{Zeros} & \textbf{Entropia} \\
+\midrule
+\texttt{q204} & 77.1854 & 77.0573 & 76.9333 & 204.0000 & 38.55\% & 4.9552 \\
+\texttt{adaptive\_s8} & 77.1773 & 77.0562 & 76.9495 & 203.9834 & 38.55\% & 4.9546 \\
+\texttt{focus\_bgpen24} & 77.0125 & 77.2363 & 76.5708 & 193.3688 & 38.85\% & 4.8975 \\
+\texttt{focus\_bgq128} & 76.2269 & 77.1768 & 75.4068 & 158.8073 & 39.93\% & 4.6870 \\
+\bottomrule
+\end{tabular}
+\caption{Objectiu semàntic: conservar ROI, degradar fons i simplificar latents.}
+\end{table}
+
+La conclusió és que la fórmula no té un únic significat operatiu. Per a objectiu local, s'avalua el bloc i la saturació Q; per a objectiu global, s'avalua el MSE mitjà de la imatge; per a objectiu semàntic, s'avalua la separació ROI/fons i la distribució de latents. El cas principal de SORTENY Fase 2 és el tercer.
+
+\subsubsection{Smoke robust de presets semàntics sobre dataset}
+
+Un cop separats els tres significats de PSNR, s'ha iniciat una validació més robusta dels presets semàntics compatibles amb el dataset actual de 8 bandes. El checkpoint és \texttt{output/checkpoints/20260520\_semantic\_presets\_dataset\_smoke}. Aquesta prova no modifica el codi C: Python només orquestra i analitza; la generació de Q-map continua en \texttt{sorteny\_semantic\_qmap}.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode smoke \
+  --smoke-crops 12 \
+  --output-dir output/checkpoints/20260520_semantic_presets_dataset_smoke
+\end{lstlisting}
+
+El smoke selecciona 12 crops estratificats i compara:
+\begin{itemize}
+  \item controls \texttt{q204} i \texttt{adaptive\_s8};
+  \item presets compatibles amb \texttt{sentinel2-8}: \texttt{vegetation}, \texttt{vegetation\_green}, \texttt{chlorophyll}, \texttt{water\_body} i \texttt{clouds};
+  \item dues polítiques focus: conservadora \texttt{background\_penalty=24} i agressiva \texttt{background\_q=128}.
+\end{itemize}
+
+La prioritat interpretativa és el grup \texttt{mid\_roi}, perquè és on hi ha separació real entre zona d'interès i fons. Els resultats agregats principals són:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llrrrrr}
+\toprule
+\textbf{Preset} & \textbf{Política} & \textbf{Casos} & \textbf{$\Delta$ ROI} & \textbf{$\Delta$ fons} & \textbf{$\Delta$ Q} & \textbf{$\Delta$ entropia} \\
+\midrule
+\texttt{clouds} & \texttt{focus\_bgq128} & 5 & 0.0960 & -1.5876 & -44.4992 & -0.2639 \\
+\texttt{vegetation} & \texttt{focus\_bgq128} & 3 & 0.1654 & -1.4225 & -42.2708 & -0.2381 \\
+\texttt{vegetation\_green} & \texttt{focus\_bgq128} & 4 & 0.1772 & -1.3390 & -29.8423 & -0.1748 \\
+\texttt{clouds} & \texttt{focus\_bgpen24} & 5 & 0.1459 & -0.3827 & -10.2891 & -0.0556 \\
+\texttt{vegetation} & \texttt{focus\_bgpen24} & 3 & 0.2130 & -0.3561 & -9.6641 & -0.0475 \\
+\bottomrule
+\end{tabular}
+\caption{Smoke de presets semàntics en crops \texttt{mid\_roi}; deltes respecte a \texttt{adaptive\_s8}.}
+\end{table}
+
+El resultat confirma la direcció del projecte: les polítiques agressives amb \texttt{background\_q=128} mantenen o milloren la ROI, degraden el fons, redueixen Q mitjà i redueixen l'entropia empírica dels latents. En aquest smoke, \texttt{clouds + focus\_bgq128} és el candidat més robust perquè compleix 5/5 casos \texttt{mid\_roi}; \texttt{vegetation + focus\_bgq128} també compleix 3/3 i és coherent amb l'objectiu inicial de vegetació. El preset \texttt{chlorophyll} compleix en l'únic cas \texttt{mid\_roi}, però no és suficient per recomanar-lo encara com a política principal.
+
+Els presets que requereixen SWIR no es consideren fallades: \texttt{water}, \texttt{burned}, \texttt{snow}, \texttt{barren\_soil} i \texttt{burned\_area} reporten 1024 blocs \texttt{missing\_bands} en els 12 crops perquè el dataset actual no conté \texttt{B11}/\texttt{B12}. El mode complet de 120 crops queda preparat, però és costós: implica fins a 1440 pipelines C de compressió/descompressió.
+
+\subsubsection{Preflight i reanudació per a la validació completa}
+
+Abans de llançar la validació completa de 120 crops, s'ha robustit el script
+\texttt{evaluate\_semantic\_presets\_dataset.py} amb dos mecanismes operatius:
+\begin{itemize}
+  \item \texttt{--mode preflight}: comprova dades, binaris, pesos, calibratge, escriptura de sortida i Q-maps de control sense executar pipelines llargs.
+  \item \texttt{--resume}: desa un resultat per cas i permet continuar una execució llarga sense repetir compressions/descompressions ja completades.
+\end{itemize}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode preflight \
+  --output-dir output/checkpoints/20260521_semantic_presets_dataset_preflight
+\end{lstlisting}
+
+El preflight ha confirmat 120/120 RAW vàlids de \texttt{8 x 512 x 512 uint16}, existència dels binaris C, pesos \texttt{weights/encoder} i \texttt{weights/decoder}, calibratge FQ, capacitat d'escriptura del checkpoint i generació mínima dels Q-maps \texttt{q204} i \texttt{adaptive\_s8} amb 1024 bytes. L'espai lliure disponible era de 928.76 GiB. La forma esperada del mode complet és:
+\begin{itemize}
+  \item 120 crops;
+  \item 5 presets útils en \texttt{sentinel2-8};
+  \item 2 polítiques semàntiques focus;
+  \item 2 controls per crop;
+  \item 2400 files de resultats finals;
+  \item 1440 pipelines C de compressió/descompressió.
+\end{itemize}
+
+Per comprovar la reanudació sense llançar el mode complet, s'ha executat un smoke de 2 crops amb \texttt{--resume}:
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode smoke --max-crops 2 --resume \
+  --output-dir output/checkpoints/20260521_resume_smoke_test
+\end{lstlisting}
+
+La primera execució ha generat 40 files de resultats i 34 fitxers \texttt{case\_result.json} a \texttt{cases/<crop>/<preset>/<policy>/}. La segona execució del mateix comandament ha reutilitzat els casos amb \texttt{status=done}, ha regenerat els agregats i no ha repetit els pipelines C. Aquest comportament protegeix la validació completa contra talls, errors puntuals o interrupcions manuals.
+
+També s'ha afegit una branca opcional per incloure una ROI manual reproduïble en aquesta mateixa validació. Aquesta ruta no substitueix la semàntica automàtica: actua com a control del cas en què l'operador selecciona blocs concrets des del segment terrestre. La decisió continua passant per C amb \texttt{sorteny\_semantic\_qmap --preset manual}; Python només genera la màscara i orquestra l'execució.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode preflight \
+  --include-manual-roi \
+  --output-dir output/checkpoints/20260522_manual_roi_preflight
+\end{lstlisting}
+
+Aquest preflight genera \texttt{manual\_center}, una ROI central de 256 blocs (25.0\% de la imatge), i dos Q-maps manuals de 1024 bytes: \texttt{focus\_bgpen24} i \texttt{focus\_bgq128}. Amb \texttt{--include-manual-roi}, la forma del mode complet passa a 2880 files de resultats i 1680 pipelines C.
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode smoke --max-crops 2 --resume --include-manual-roi \
+  --output-dir output/checkpoints/20260522_manual_roi_resume_smoke_test
+\end{lstlisting}
+
+El smoke manual ha generat 48 files de resultats i 38 fitxers \texttt{case\_result.json}. La segona execució amb \texttt{--resume} ha reutilitzat també els casos \texttt{manual\_center}. En el primer crop, \texttt{manual\_center + focus\_bgq128} conserva la ROI respecte a \texttt{adaptive\_s8} (+0.2274 dB), degrada el fons (-1.4975 dB) i deixa \texttt{q\_mean=151.1191}.
+
+El mode complet queda preparat, però no s'ha executat en aquest increment:
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode full \
+  --resume \
+  --keep-heavy representative \
+  --output-dir output/checkpoints/20260521_semantic_presets_dataset_full
+\end{lstlisting}
+
+Si es vol incloure el control manual en el llançament llarg, s'ha d'afegir \texttt{--include-manual-roi} i utilitzar un checkpoint separat:
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode full \
+  --resume \
+  --include-manual-roi \
+  --keep-heavy representative \
+  --output-dir output/checkpoints/20260522_semantic_presets_dataset_full_manual
+\end{lstlisting}
+
+\subsection{Milestone C: presets semàntics Sentinel-2}
+
+Objectiu: traduir objectius de missió en mapes locals de qualitat. El generador C semàntic ja disposa d'un catàleg auditable de presets; alguns són validables amb el layout actual de 8 bandes i altres queden preparats per quan hi hagi \texttt{B11} i \texttt{B12}.
+
+\begin{itemize}
+  \item Documentar l'ordre real de bandes del RAW del projecte. Primer layout registrat: \texttt{sentinel2-8}.
+  \item Implementar càlcul d'índexs radiomètrics en C sobre \texttt{uint16}. NDVI queda validat localment; la resta del catàleg queda auditat com a interfície reproduïble.
+  \item Agregar els índexs per bloc, evitant decisions píxel a píxel massa sorolloses. Implementat amb mitjana per bloc de $16 \times 16$.
+  \item Definir presets que converteixin màscares semàntiques en increments locals de Q o en política de focus amb degradació de fons.
+  \item Comparar cada preset contra el mode uniforme, la política adaptativa per dificultat i les polítiques de focus quan hi hagi evidència local suficient.
+\end{itemize}
+
+El criteri d'èxit serà que un preset com \texttt{vegetation} assigni més qualitat a blocs amb vegetació i mantingui més compressió a la resta, sense necessitat que l'operador introdueixi manualment una matriu de $\lambda$.
+
+\subsection{Milestone D: optimització i validació Raspberry}
+
+Objectiu: garantir que la Fase 2 continua sent viable en Raspberry Pi 3B+.
+
+\begin{itemize}
+  \item Mesurar temps, RAM, ús de CPU, temperatura, freqüència i throttling.
+  \item Comparar el cost del Q-map variable contra el mode global.
+  \item Confirmar que l'ús de memòria continua prop del rang actual.
+  \item Repetir benchmarks només quan la Raspberry estigui en condicions tèrmiques i de freqüència correctes.
+\end{itemize}
+
+Aquest hito queda condicionat a recuperar l'accés SSH estable a la Raspberry després del reinici que va interrompre la sessió anterior.
+
+% ------------------------------------------------------------------
+\section{Criteris de Validació}
+
+\subsection{Compatibilitat funcional}
+
+\begin{itemize}
+  \item Els bitstreams amb Q-map constant han de continuar descomprimint-se.
+  \item El pipeline amb $\lambda=0.1$ i \texttt{max\_lambda=0.125} ha de conservar PSNR proper a 76.7255 dB.
+  \item El mode fast amb OpenMP ha de continuar sent el perfil recomanat per Raspberry Pi 3B+.
+\end{itemize}
+
+\subsection{Qualitat}
+
+S'avaluaran com a mínim:
+\begin{itemize}
+  \item MSE, MAE, PSNR i diferència màxima global.
+  \item MSE/PSNR per bloc de $16 \times 16$ píxels per validar qualitat local.
+  \item Agregació de mètriques per valor Q per verificar que els mapes de qualitat tenen l'efecte esperat.
+  \item Mètriques C vs Python quan hi hagi referència equivalent.
+  \item Conservació dels índexs semàntics quan el preset depengui d'ells.
+\end{itemize}
+
+\subsection{Rendiment}
+
+Les validacions de rendiment hauran d'incloure:
+\begin{itemize}
+  \item temps de compressió, descompressió i total;
+  \item ús de memòria pic;
+  \item fils màxims observats;
+  \item temperatura i estat \texttt{vcgencmd get\_throttled};
+  \item freqüència efectiva de CPU.
+\end{itemize}
+
+\subsection{Comprovacions mínimes}
+
+\begin{lstlisting}[language=bash]
+make clean && make MODE=release OMP=1
+make run_pipeline
+python3 src/python/analysis/validate_e2e.py \
+  data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  output/reconstructed.raw \
+  --lmbda 0.1 \
+  --max-lambda 0.125
+make test_ops
+python3 src/python/analysis/analyze_block_quality.py \
+  data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  output/reconstructed.raw \
+  --bitstream output/latent.bin \
+  --output-json output/block_quality.json \
+  --output-csv output/block_quality.csv
+gcc -Wall -Wextra -std=c11 -fopenmp -fsyntax-only src/c/*.c
+python3 -m py_compile $(find src/python scripts -name '*.py')
+bash -n scripts/*.sh scripts/raspberry/*.sh 2>/dev/null || true
+\end{lstlisting}
+
+% ------------------------------------------------------------------
+\section{Riscos i Decisions}
+
+\subsection{Riscos tècnics}
+
+\begin{longtable}{p{4.2cm} p{6.1cm} p{4.2cm}}
+\toprule
+\textbf{Risc} & \textbf{Impacte} & \textbf{Mitigació} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Risc} & \textbf{Impacte} & \textbf{Mitigació} \\
+\midrule
+\endhead
+Ordre de bandes desconegut & Índexs semàntics incorrectes & Documentar i validar l'ordre abans d'implementar presets \\
+Coeficients no calibrats & La qualitat fixa podria no assolir el MSE objectiu & Mesurar $a$, $b$, $\alpha$ sobre la base actual \\
+Cost de modulació variable & Pèrdua de rendiment en Raspberry & Cache de moduladors per Q únic i fast path constant \\
+Throttling Raspberry & Resultats temporals no comparables & Registrar temperatura, freqüència i \texttt{get\_throttled} \\
+Modulació espectral prematura & Risc de requerir reentrenament & Tractar-ho com a recerca posterior al Q-map espacial \\
+\bottomrule
+\end{longtable}
+
+\subsection{Decisions adoptades}
+
+\begin{itemize}
+  \item La Fase 2 començarà pel suport de Q-map espacial variable.
+  \item La semàntica Sentinel-2 s'implementarà després de tenir qualitat local funcional.
+  \item La modulació multidimensional per bandes, capes o feature maps es considera línia de recerca, no requisit inicial.
+  \item La Raspberry Pi 3B+ continua sent la plataforma oficial, però els temps es revalidaran només quan la freqüència i l'estat tèrmic siguin fiables.
+  \item La documentació de treball es mantindrà en aquest fitxer fins que sigui incorporada a l'informe final.
+\end{itemize}
+
+% ------------------------------------------------------------------
+\section{Bitàcola Tècnica}
+
+Aquesta taula s'actualitzarà durant la Fase 2. La seva funció és permetre reconstruir el procés complet: què es va canviar, amb quina evidència, quin resultat es va obtenir i quines incidències van aparèixer.
+
+\begin{longtable}{p{1.7cm} p{2.3cm} p{2.6cm} p{2.8cm} p{2.1cm} p{2.0cm}}
+\toprule
+\textbf{Data} & \textbf{Fita / hito} & \textbf{Fitxers afectats} & \textbf{Evidència} & \textbf{Resultat} & \textbf{Estat} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Data} & \textbf{Fita / hito} & \textbf{Fitxers afectats} & \textbf{Evidència} & \textbf{Resultat} & \textbf{Estat} \\
+\midrule
+\endhead
+05/05/2026 & Sanejament base & \texttt{README.md}, C, scripts i Python auxiliar & Validació local i artefactes Progrés 1 & Base coherent amb pipeline complet & Completat \\
+05/05/2026 & Investigació Raspberry & Cap canvi local & Smoke tests actuals i històrics en Raspberry & Temps afectats per freqüència baixa/throttling & Pendent revalidar \\
+05/05/2026 & Disseny Fase 2 & \texttt{docs/informes/Progreso2.tex} & Aquest document & Roadmap documentat abans d'implementar & En curs \\
+06/05/2026 & Punt de retorn & \texttt{../backups/sorteny\_safe\_state\_20260506\_193632.tar.gz} & Còpia comprimida de 498 MB & Estat inicial segur preservat & Completat \\
+06/05/2026 & Checkpoint baseline Q constant & \texttt{output/checkpoints/20260506\_baseline\_constant\_qmap} & Q-map $32 \times 32$, Q únic 204, PSNR 76.73 dB & Referència local abans de modificar decoder & Completat \\
+06/05/2026 & Decoder Q-map variable & \texttt{src/c/decompress.c} & Regressió constant \texttt{cmp=0}; prova sintètica amb Q 180/204 & Decoder accepta Q-map variable; encoder variable pendent & Completat \\
+06/05/2026 & Encoder Q-map extern & \texttt{src/c/main.c}, \texttt{README.md} & Regressió constant \texttt{cmp=0}; checkpoint coherent Q 180/204 & Encoder i decoder processen Q-map variable coherent, PSNR 76.56 dB & Completat \\
+06/05/2026 & Generador de Q-maps & \texttt{src/python/utils/generate\_qmap.py} & Q constant 204: \texttt{cmp=0}; horizontal 180/204: \texttt{cmp=0} amb checkpoint manual & Mapes de prova reproduïbles sense edició binària manual & Completat \\
+06/05/2026 & Qualitat local per blocs & \texttt{src/python/analysis/analyze\_block\_quality.py} & Baseline: MSE 91.2853; Q 180/204: MSE Q180=131.1396, Q204=58.3804 & Mètriques locals i agregació per Q disponibles & Completat \\
+06/05/2026 & Barrido empíric Q & \texttt{src/python/analysis/sweep\_q\_quality.py} & Q 160--232: MSE monòton decreixent; Q=204 \texttt{cmp=0} & Evidència Q $\rightarrow$ MSE/PSNR per calibratge local & Completat \\
+06/05/2026 & Selector global de Q & \texttt{src/python/analysis/select\_q\_for\_target.py} & Objectiu PSNR 76.8: Q=210; PSNR real 76.8000 dB & Control global de qualitat validat per interpolació & Completat \\
+07/05/2026 & Generador C de Q-map local & \texttt{src/c/fixed\_quality\_qmap.c}, \texttt{Makefile}, \texttt{src/python/analysis/build\_fq\_calibration.py} & Q=204: \texttt{latent\_cmp=0}, \texttt{recon\_cmp=0}; PSNR local 76.8: PSNR real 76.3260 dB & Decisió de Q-map passa a C; objectiu local uniforme requereix calibratge més ampli & Completat \\
+07/05/2026 & Barrido ampliat i viabilitat & \texttt{src/c/fixed\_quality\_qmap.c}, \texttt{docs/informes/Progreso2.tex} & Q 128--255: monotònic; 1024/1024 blocs calibrats; viabilitat 150/201/673 & El problema no és només rang: cal objectiu local adaptatiu, no MSE uniforme & Completat \\
+07/05/2026 & Política adaptativa per dificultat & \texttt{src/c/fixed\_quality\_qmap.c}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & Strength 8: PSNR 76.7471 dB; MSE pitjors 10 = 802.6933 & Primera política adaptativa C amb pressupost Q=204 millora lleument el baseline & Completat \\
+07/05/2026 & Q-map semàntic Sentinel-2 en C & \texttt{src/c/semantic\_qmap.c}, \texttt{Makefile}, \texttt{README.md} & \texttt{vegetation}: 108 boosts, PSNR 76.7582 dB; \texttt{water}: 1024 blocs \texttt{missing\_bands} & Milestone C obert; NDVI funcional sobre layout \texttt{sentinel2-8} i presets complets preparats per 13 bandes & Completat \\
+07/05/2026 & Validació local NDVI & \texttt{output/checkpoints/20260509\_semantic\_validation\_vegetation}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & 12 candidats; recomanat NDVI 0.40 + boost 16; regió semàntica +0.3458 dB & El preset \texttt{vegetation} millora la zona semàntica sense degradar els pitjors blocs & Completat \\
+08/05/2026 & Política focus amb degradació de fons & \texttt{src/c/semantic\_qmap.c}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{fg=16,bg=24}: ROI +0.3112 dB, fons -0.3015 dB, Q mig 184.2021 & La qualitat es concentra en vegetació i el fons es degrada per preparar millor compressió futura & Completat \\
+08/05/2026 & Fons fix a Q baix & \texttt{src/c/semantic\_qmap.c}, \texttt{output/checkpoints/20260511\_semantic\_background\_q\_vegetation} & \texttt{background-q=128}: zeros 42.20\%, entropia 4.1913, ROI +0.1749 dB & Primer proxy fort de latents més compressibles quan s'integri codificació entròpica & Completat \\
+08/05/2026 & Evidència visual focus & \texttt{src/python/analysis/build\_focus\_evidence\_report.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{20260512\_focus\_evidence\_report}: mapes PGM/PPM, histogrames i resum ROI/fons & Informe auxiliar confirma focus bgQ128: ROI conservada, fons degradat i latents més simples & Completat \\
+08/05/2026 & Dataset Sentinel-2A 8 bandes & \texttt{src/c/semantic\_qmap.c}, \texttt{src/python/analysis/run\_semantic\_dataset\_smoke.py} & 120/120 RAW validats; \texttt{band-map} equivalent; smoke PSNR 78.1528 dB & Q-map semàntic generalitzat per lots de 8 bandes i preparat per layouts futurs & Completat \\
+08/05/2026 & ROI manual de blocs & \texttt{src/c/semantic\_qmap.c}, \texttt{src/python/utils/generate\_roi\_map.py} & ROI central 256 blocs; \texttt{roi-map} = \texttt{roi-tsv}; Q-map 1024 bytes & Segment terrestre pot seleccionar manualment zones d'interès sense índexs radiomètrics & Completat \\
+09/05/2026 & Auditoria catàleg semàntic & \texttt{src/python/analysis/audit\_semantic\_presets.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & 12 presets; 120/120 RAW; \texttt{vegetation} byte-identical; \texttt{clouds} smoke PSNR 76.7709 dB & Catàleg consolidat com a interfície reproduïble; detectors amb \texttt{B11/B12} pendents de dataset complet & Completat \\
+09/05/2026 & Fórmula paper i latents & \texttt{src/python/analysis/verify\_fq\_formula\_and\_latents.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{20260516\_formula\_and\_latent\_coding\_evidence}: Q-maps C/Python byte-identical; $R^2=0.998984$; focus +2.6904 pp zeros & La fórmula és coherent amb el paper i el focus genera latents estadísticament més codificables & Completat \\
+10/05/2026 & Demo funcionament correcte & \texttt{src/python/analysis/build\_correctness\_demo.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{20260517\_correct\_functioning\_demo}: Q204 PSNR 76.7255; ROI +0.1748 dB; fons -1.3350 dB & Paquet local reproduïble demostra ruta C Q-map, focus semàntic i latents més simples & Completat \\
+10/05/2026 & Validació target PSNR dataset & \texttt{src/python/analysis/validate\_target\_psnr\_dataset.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & Smoke \texttt{20260518\_target\_psnr\_dataset\_validation\_smoke}: 1 crop, 2 targets, recalibratge; error mitjà 1.0747 dB $\rightarrow$ 0.6026 dB & Procediment complet preparat per 120 crops; la recalibració redueix error i mostra saturacions Q explícites & En curs \\
+10/05/2026 & Tres objectius PSNR/MSE & \texttt{src/python/analysis/demonstrate\_psnr\_objectives.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{20260519\_psnr\_objective\_modes\_demo}: 3 crops, 3 targets; global 76.8 error 0.0220 dB; focus ROI 77.1768 i fons 75.4068 & Queda separada la interpretació local, global i semàntica del PSNR objectiu & Completat \\
+10/05/2026 & Smoke robust presets dataset & \texttt{src/python/analysis/evaluate\_semantic\_presets\_dataset.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{20260520\_semantic\_presets\_dataset\_smoke}: 12 crops, 5 presets útils, 2 polítiques focus; \texttt{clouds+bgq128} 5/5 en \texttt{mid\_roi} & Els presets compatibles amb 8 bandes concentren qualitat en ROI i degraden fons; SWIR queda com \texttt{missing\_bands} & Completat \\
+10/05/2026 & Auditoria MCOS i histogrames & \texttt{docs/informes/MCOS2024\_audit.md}, \texttt{scripts/experiments/exp3\_latent\_histograms.py}, \texttt{README.md} & \texttt{output/experiments/exp3\_latent\_histograms\_fixed}: \texttt{focus\_bgq128} std 36.3995, zeros 42.1979\%, entropia 4.1913 & MCOS queda com a referència externa; parser antic de latents corregit abans d'usar gràfics en informes & Completat \\
+10/05/2026 & Preflight i resume dataset & \texttt{src/python/analysis/evaluate\_semantic\_presets\_dataset.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{20260521\_semantic\_presets\_dataset\_preflight}: 120 RAW vàlids; \texttt{20260521\_resume\_smoke\_test}: 40 files i 34 \texttt{case\_result.json} & El mode complet queda protegit amb \texttt{run\_manifest.json}, \texttt{progress.csv}, resultats per cas i reanudació; \texttt{full} pendent d'ordre explícita & Completat \\
+11/05/2026 & ROI manual en validació dataset & \texttt{src/python/analysis/evaluate\_semantic\_presets\_dataset.py}, \texttt{README.md}, \texttt{docs/informes/Progreso2.tex} & \texttt{20260522\_manual\_roi\_preflight}: \texttt{manual\_center} 256 blocs; \texttt{20260522\_manual\_roi\_resume\_smoke\_test}: 48 files i 38 \texttt{case\_result.json} & La prova completa pot incloure selecció manual de blocs amb \texttt{--include-manual-roi}; full amb manual passa a 1680 pipelines C & Completat \\
+\bottomrule
+\end{longtable}
+
+% ------------------------------------------------------------------
+\appendix
+\section{Apèndix A: Comandes de Referència}
+
+\subsection{Execució C local}
+
+\begin{lstlisting}[language=bash]
+make clean
+make MODE=release OMP=1
+
+./sorteny_compressor \
+  data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  0.1 \
+  output/latent.bin \
+  weights/encoder \
+  0.125
+
+./sorteny_decompressor \
+  output/latent.bin \
+  output/reconstructed.raw \
+  weights/decoder \
+  0.125
+\end{lstlisting}
+
+\subsection{Calibratge i Q-map local en C}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/build_fq_calibration.py \
+  --sweep output/checkpoints/q_sweep_calibration_wide/sweep_results.json \
+  --output-tsv output/fq_calibration.tsv \
+  --summary-json output/fq_calibration_summary.json
+
+./sorteny_fq_qmap \
+  --calibration output/fq_calibration.tsv \
+  --target-psnr 76.8 \
+  --output-qmap output/qmap_fq_local.bin \
+  --summary-tsv output/qmap_fq_local_summary.tsv
+
+./sorteny_fq_qmap \
+  --calibration output/fq_calibration.tsv \
+  --adaptive-difficulty \
+  --q-mean 204 \
+  --adaptive-strength 8 \
+  --output-qmap output/qmap_adaptive_difficulty.bin \
+  --summary-tsv output/qmap_adaptive_difficulty_summary.tsv
+
+./sorteny_compressor \
+  data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  0.1 \
+  output/latent_fq_local.bin \
+  weights/encoder \
+  0.125 \
+  output/qmap_fq_local.bin
+\end{lstlisting}
+
+\subsection{Q-map semàntic Sentinel-2 en C}
+
+\begin{lstlisting}[language=bash]
+./sorteny_semantic_qmap \
+  --input data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  --calibration output/fq_calibration.tsv \
+  --preset vegetation \
+  --output-qmap output/qmap_semantic_vegetation.bin \
+  --summary-tsv output/qmap_semantic_vegetation_summary.tsv \
+  --bands 8 \
+  --height 512 \
+  --width 512 \
+  --band-layout sentinel2-8 \
+  --q-mean 204 \
+  --adaptive-strength 8 \
+  --semantic-boost 8
+
+./sorteny_semantic_qmap \
+  --input data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  --calibration output/fq_calibration.tsv \
+  --preset vegetation \
+  --semantic-policy focus \
+  --foreground-boost 16 \
+  --background-penalty 24 \
+  --threshold 0.40 \
+  --output-qmap output/qmap_focus_vegetation.bin \
+  --summary-tsv output/qmap_focus_vegetation_summary.tsv \
+  --bands 8 \
+  --height 512 \
+  --width 512 \
+  --band-layout sentinel2-8 \
+  --q-mean 204 \
+  --adaptive-strength 8
+
+./sorteny_semantic_qmap \
+  --input data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  --calibration output/fq_calibration.tsv \
+  --preset vegetation \
+  --semantic-policy focus \
+  --foreground-boost 16 \
+  --background-q 128 \
+  --threshold 0.40 \
+  --output-qmap output/qmap_focus_vegetation_bg128.bin \
+  --summary-tsv output/qmap_focus_vegetation_bg128_summary.tsv \
+  --bands 8 \
+  --height 512 \
+  --width 512 \
+  --band-layout sentinel2-8 \
+  --q-mean 204 \
+  --adaptive-strength 8
+
+./sorteny_compressor \
+  data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  0.1 \
+  output/latent_semantic_vegetation.bin \
+  weights/encoder \
+  0.125 \
+  output/qmap_semantic_vegetation.bin
+\end{lstlisting}
+
+\subsection{Paquet d'evidència focus}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/build_focus_evidence_report.py \
+  --output-dir output/checkpoints/20260512_focus_evidence_report
+\end{lstlisting}
+
+\subsection{Verificació fórmula i latents}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/verify_fq_formula_and_latents.py \
+  --output-dir output/checkpoints/20260516_formula_and_latent_coding_evidence
+\end{lstlisting}
+
+\subsection{Demo de funcionament correcte}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/build_correctness_demo.py \
+  --output-dir output/checkpoints/20260517_correct_functioning_demo
+\end{lstlisting}
+
+\subsection{Validació target PSNR/MSE sobre dataset}
+
+\begin{lstlisting}[language=bash]
+# Execucio completa, costosa i reanudable
+python3 src/python/analysis/validate_target_psnr_dataset.py \
+  --output-dir output/checkpoints/20260518_target_psnr_dataset_validation
+
+# Smoke reduit per validar la ruta abans del barrido complet
+python3 src/python/analysis/validate_target_psnr_dataset.py \
+  --output-dir output/checkpoints/20260518_target_psnr_dataset_validation_smoke \
+  --max-crops 1 \
+  --targets 74.5 76.8 \
+  --recalibrate-count 1 \
+  --keep-artifacts sample
+\end{lstlisting}
+
+\subsection{Demostració dels tres objectius PSNR/MSE}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/demonstrate_psnr_objectives.py \
+  --output-dir output/checkpoints/20260519_psnr_objective_modes_demo \
+  --max-crops 3 \
+  --targets 74.5 76.8 77.5
+\end{lstlisting}
+
+\subsection{Validació robusta de presets semàntics}
+
+\begin{lstlisting}[language=bash]
+# Smoke estratificat
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode smoke \
+  --smoke-crops 12 \
+  --output-dir output/checkpoints/20260520_semantic_presets_dataset_smoke
+
+# Execucio completa sobre 120 crops, costosa
+python3 src/python/analysis/evaluate_semantic_presets_dataset.py \
+  --mode full \
+  --output-dir output/checkpoints/20260521_semantic_presets_dataset_full
+\end{lstlisting}
+
+\subsection{Dataset Sentinel-2A i ROI manual}
+
+\begin{lstlisting}[language=bash]
+python3 src/python/analysis/run_semantic_dataset_smoke.py \
+  --output-dir output/checkpoints/20260513_sentinel2a_8band_dataset_validation
+
+python3 src/python/utils/generate_roi_map.py \
+  output/checkpoints/20260514_manual_roi_focus/roi_manual_center.bin \
+  --pattern center \
+  --output-tsv output/checkpoints/20260514_manual_roi_focus/roi_manual_center.tsv
+
+./sorteny_semantic_qmap \
+  --calibration output/checkpoints/20260507_c_fixed_quality_qmap_wide/fq_calibration.tsv \
+  --preset manual \
+  --semantic-policy focus \
+  --foreground-boost 16 \
+  --background-q 128 \
+  --roi-map output/checkpoints/20260514_manual_roi_focus/roi_manual_center.bin \
+  --output-qmap output/checkpoints/20260514_manual_roi_focus/qmap_manual_roi_map.bin \
+  --summary-tsv output/checkpoints/20260514_manual_roi_focus/manual_roi_map_summary.tsv
+\end{lstlisting}
+
+\subsection{Diagnòstic Raspberry pendent}
+
+Quan es recuperi l'accés SSH a la Raspberry Pi 3B+, s'hauran de registrar com a mínim:
+
+\begin{lstlisting}[language=bash]
+date -Is
+uptime
+vcgencmd measure_temp
+vcgencmd get_throttled
+vcgencmd measure_clock arm
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+\end{lstlisting}
+
+Només després d'aquesta comprovació s'haurien de repetir els benchmarks oficials.
+
+\section{Apèndix B: Plantilla de Registre d'Incidències}
+
+\begin{longtable}{p{3.0cm} p{11.0cm}}
+\toprule
+\textbf{Camp} & \textbf{Descripció} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Camp} & \textbf{Descripció} \\
+\midrule
+\endhead
+Data i hora & Moment exacte de la incidència o prova. \\
+Context & Comanda, plataforma, branca o estat del repositori. \\
+Símptoma & Error observat, desviació de qualitat, temps anòmal o resultat inesperat. \\
+Hipòtesi & Explicació provisional abans de corregir. \\
+Acció & Canvi, prova o mesura aplicada. \\
+Evidència & Logs, mètriques, captures o fitxers generats. \\
+Conclusió & Decisió final i impacte sobre el roadmap. \\
+\bottomrule
+\end{longtable}
+
+\begin{thebibliography}{9}
+
+\bibitem{mijares2024fixed}
+S. Mijares i Verdú, M. Chabert, T. Oberlin, and J. Serra-Sagristà,
+``Fixed-Quality Compression of Remote Sensing Images With Neural Networks,''
+\textit{IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing},
+vol. 17, pp. 12169--12180, 2024.
+
+\bibitem{sentinelhub}
+Sentinel Hub,
+``Custom Scripts for Sentinel-2.''
+Disponible a:
+\url{https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel/sentinel-2/}.
+Accedit el 5 de maig de 2026.
+
+\bibitem{readme}
+Projecte SORTENY C,
+\texttt{README.md},
+estat sanejat de la base local, maig de 2026.
+
+\end{thebibliography}
+
+\end{document}

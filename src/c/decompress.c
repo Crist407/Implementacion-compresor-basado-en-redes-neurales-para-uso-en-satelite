@@ -134,6 +134,25 @@ static int ensure_spectral_synthesis(SORTENY_Model* model) {
     return 0;
 }
 
+static float lambda_from_q(uint8_t q, float max_lambda) {
+    return ((float)q / 255.0f) * (max_lambda - MIN_LAMBDA) + MIN_LAMBDA;
+}
+
+static void build_modulator_for_q(
+    float* restrict out_modulator,
+    float* restrict scratch_hidden,
+    const SORTENY_Model* model,
+    uint8_t q,
+    float max_lambda
+) {
+    float lambda_quant = lambda_from_q(q, max_lambda);
+    float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
+    apply_dense(scratch_hidden, input_lambda, &model->modulating_mod.dense_0);
+    apply_relu(scratch_hidden, (int)model->modulating_mod.dense_0.C_out);
+    apply_dense(out_modulator, scratch_hidden, &model->modulating_mod.dense_1);
+    apply_relu(out_modulator, (int)model->modulating_mod.dense_1.C_out);
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 3 || argc > 5) {
         fprintf(stderr, "Uso: %s <input.bin> <output.raw> [weights_dir] [max_lambda]\n", argv[0]);
@@ -167,7 +186,7 @@ int main(int argc, char* argv[]) {
     SORTENY_Model* model = NULL;
 
     float* mod_hidden = NULL;
-    float* modulator = NULL;
+    float* modulator_cache = NULL;
     float* band_latent = NULL;
     float* ds = NULL;
     float* buf0 = NULL;
@@ -243,16 +262,24 @@ int main(int argc, char* argv[]) {
     }
     fclose(f_in); f_in = NULL;
 
-    // v1: se asume mapa Q constante.
     uint8_t q0 = q_map[0];
-    for (size_t i = 1; i < q_map_size; ++i) {
-        if (q_map[i] != q0) {
-            fprintf(stderr, "Error: Q-map no constante (v1 no soporta quality map espacial).\n");
-            goto cleanup;
+    uint8_t q_min = q0;
+    uint8_t q_max = q0;
+    uint8_t q_seen[256] = {0};
+    size_t q_unique_count = 0;
+    for (size_t i = 0; i < q_map_size; ++i) {
+        uint8_t q = q_map[i];
+        if (q < q_min) q_min = q;
+        if (q > q_max) q_max = q;
+        if (!q_seen[q]) {
+            q_seen[q] = 1;
+            q_unique_count++;
         }
     }
 
-    float lambda_quant = ((float)q0 / 255.0f) * (max_lambda - MIN_LAMBDA) + MIN_LAMBDA;
+    float lambda_q0 = lambda_from_q(q0, max_lambda);
+    float lambda_min_q = lambda_from_q(q_min, max_lambda);
+    float lambda_max_q = lambda_from_q(q_max, max_lambda);
 
     printf("Cargando modelo decoder desde '%s'...\n", weights_dir);
     model = load_model_weights(weights_dir);
@@ -317,19 +344,25 @@ int main(int argc, char* argv[]) {
         goto cleanup;
     }
 
-    printf("Bitstream OK: B=%zu H=%zu W=%zu C_lat=%zu Q=%u lambda_q=%.6f\n",
-           B, H, W, C_lat, q0, lambda_quant);
+    if (q_unique_count == 1) {
+        printf("Bitstream OK: B=%zu H=%zu W=%zu C_lat=%zu Q=%u lambda_q=%.6f\n",
+               B, H, W, C_lat, q0, lambda_q0);
+    } else {
+        printf("Bitstream OK: B=%zu H=%zu W=%zu C_lat=%zu Q_range=[%u,%u] unique_Q=%zu lambda_range=[%.6f,%.6f]\n",
+               B, H, W, C_lat, q_min, q_max, q_unique_count, lambda_min_q, lambda_max_q);
+    }
 
-    // Modulación inversa.
+    // Modulación inversa: cache de moduladores por valor Q presente en el Q-map.
     mod_hidden = allocate_tensor(model->modulating_mod.dense_0.C_out, 1, 1, "mod_hidden");
-    modulator = allocate_tensor(model->modulating_mod.dense_1.C_out, 1, 1, "modulator");
-    if (!mod_hidden || !modulator) goto cleanup;
+    modulator_cache = allocate_tensor(256, 1, model->modulating_mod.dense_1.C_out, "modulator_cache");
+    if (!mod_hidden || !modulator_cache) goto cleanup;
 
-    float input_lambda[1] = { lambda_quant / MOD_LAMBDA_SCALE };
-    apply_dense(mod_hidden, input_lambda, &model->modulating_mod.dense_0);
-    apply_relu(mod_hidden, (int)model->modulating_mod.dense_0.C_out);
-    apply_dense(modulator, mod_hidden, &model->modulating_mod.dense_1);
-    apply_relu(modulator, (int)model->modulating_mod.dense_1.C_out);
+    size_t mod_out = model->modulating_mod.dense_1.C_out;
+    for (size_t q = 0; q < 256; ++q) {
+        if (q_seen[q]) {
+            build_modulator_for_q(modulator_cache + q * mod_out, mod_hidden, model, (uint8_t)q, max_lambda);
+        }
+    }
 
     size_t HW = H * W;
     size_t plane4 = H4 * W4;
@@ -354,11 +387,12 @@ int main(int argc, char* argv[]) {
     for (size_t b = 0; b < B; ++b) {
         // Desmodulación por banda/canal.
         for (size_t c = 0; c < C_lat; ++c) {
-            float m = modulator[b * C_lat + c];
-            if (fabsf(m) < 1e-8f) m = 1e-8f;
+            size_t mod_base = b * C_lat + c;
             size_t base = ((b * C_lat) + c) * plane4;
             size_t out_base = c * plane4;
             for (size_t p = 0; p < plane4; ++p) {
+                float m = modulator_cache[(size_t)q_map[p] * mod_out + mod_base];
+                if (fabsf(m) < 1e-8f) m = 1e-8f;
                 band_latent[out_base + p] = (float)latents[base + p] / m;
             }
         }
@@ -404,7 +438,7 @@ cleanup:
     if (model) free_model_weights(model);
 
     if (mod_hidden) free(mod_hidden);
-    if (modulator) free(modulator);
+    if (modulator_cache) free(modulator_cache);
     if (band_latent) free(band_latent);
     if (ds) free(ds);
     if (buf0) free(buf0);
