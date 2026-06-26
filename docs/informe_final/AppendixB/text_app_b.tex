@@ -1,0 +1,170 @@
+% !TEX root = ../main.tex
+\chapter{Configuració de modes i presets}\label{app:configuration}\label{app:config}
+\fancyhead[RE]{\slshape \textsf{Apèndix \thechapter.\ Configuració}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section*{Pendent de fer}
+\iffalse
+
+\section{Conversió entre Q i lambda}
+
+La configuració \code{lambda005} utilitza:
+
+\begin{equation}
+\lambda(Q)=\frac{Q}{255}\cdot0,05.
+\end{equation}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{rrrr}
+\toprule
+Q & $\lambda$ & Ús & Estat \\
+\midrule
+64 & 0,01255 & Fons molt agressiu & Experimental \\
+96 & 0,01882 & Fons agressiu & Experimental \\
+128 & 0,02510 & Fons operatiu & Validat \\
+204 & 0,04000 & Baseline uniforme & Validat \\
+240 & 0,04706 & ROI preserve intermèdia & Validat \\
+255 & 0,05000 & Qualitat màxima de l'escala & Validat \\
+\bottomrule
+\end{tabular}
+\caption{Valors representatius de Q en l'escala actual.}
+\label{tab:q_lambda_appendix}
+\end{table}
+
+El tipus \code{uint8} permet Q entre 0 i 255, però el rang operatiu validat és
+128--255. Els valors inferiors no són invàlids ni perillosos per definició:
+produeixen més distorsió, com s'espera. Es mantenen experimentals perquè la
+calibració target--MSE, CSMR, evidència visual i Raspberry no s'han repetit amb
+la mateixa cobertura. L'opció \code{--allow-experimental-low-q} fa explícita
+aquesta decisió.
+
+\section{Modes i polítiques}
+
+\begin{longtable}{p{2.7cm}p{3.0cm}p{8.1cm}}
+\caption{Definició funcional dels modes de Q-map.}\label{tab:all_modes}\\
+\toprule
+Mode & Paràmetres clau & Regla \\
+\midrule
+\endfirsthead
+\toprule
+Mode & Paràmetres clau & Regla \\
+\midrule
+\endhead
+\code{q204} & Q=204 & Assigna Q204 als 1.024 blocs. És el baseline
+uniforme i no calcula cap target. \\
+\code{global\_target} & PSNR o MSE objectiu & Inverteix la calibració per
+obtenir un únic $Q^\star$ i l'assigna a tota la imatge. Pot coincidir amb Q204,
+però la interfície d'usuari és un objectiu de qualitat. \\
+\code{adaptive\_s8} & $\bar Q=204$, $s=8$ & Calcula dificultat relativa per
+bloc i aplica $Q_i=\operatorname{clip}(204+8z_i)$. No usa preset ni ROI. \\
+\code{boost-only} & Preset, boost & Manté la base adaptativa al fons i
+augmenta Q només als blocs ROI. \\
+\code{focus\_bgq128} & Preset, boost=16, fons=128 & La ROI rep
+$Q_{adaptive}+16$ i conserva variació interna; el fons rep Q128. \\
+\code{focus\_bgpen24} & Preset, boost=16, penalització fons=24 & Política
+auxiliar de cribratge C-only: la ROI rep boost i el fons es redueix respecte de
+la base adaptativa, sense fixar-lo a Q128. \\
+\code{target-focus} & Preset, target ROI & Selecciona Q dins la ROI a partir
+d'un objectiu MSE/PSNR i aplica el tractament de fons configurat. \\
+\code{preserve-roi} & Preset, ROI=240/255, fons=128 & Imposa dos nivells.
+No usa $Q_{adaptive}$ dins la ROI. \\
+\bottomrule
+\end{longtable}
+
+\section{Presets de la configuració final}
+
+\begin{longtable}{p{2.9cm}p{2.2cm}p{1.7cm}p{2.2cm}p{4.6cm}}
+\caption{Presets inclosos al bundle final i threshold aplicat.}\label{tab:all_presets}\\
+\toprule
+Preset & Magnitud & Condició & Estat & Interpretació \\
+\midrule
+\endfirsthead
+\toprule
+Preset & Magnitud & Condició & Estat & Interpretació \\
+\midrule
+\endhead
+\path{cloud_avoid} & CBY clear & $\leq0,50$ & Operatiu & Protegeix blocs
+classificats com a no-núvol pel detector disponible. Sense B11 usa fallback
+visible i no una detecció completa. \\
+\path{local_contrast} & desviació visible & $\geq0,035$ & Operatiu & Prioritza
+textures i vores en B02, B03 i B04. No representa una coberta física. \\
+\path{high_ndvi} & NDVI & $\geq0,50$ & Operatiu & Vegetació densa. Promocionat
+després de tres casos CSMR mid-roi consistents. \\
+\code{vegetation} & NDVI & $\geq0,40$ & Referència & Vegetació segons el
+threshold de referència estable del full. \\
+\path{vegetation_green} & GNDVI & $\geq0,50$ & Referència & Sensibilitat a la
+banda verda en lloc de la vermella. \\
+\code{chlorophyll} & NDCI & $\geq0,10$ & Referència & Proxy espectral basat en
+B05 i B04; la interpretació física depèn del domini. \\
+\path{low_ndvi} & NDVI & $\leq0,15$ & Experimental & Agrupa valors negatius i
+positius baixos. Pot incloure aigua, sòl nu i cobertes no vegetades; no és un
+detector exclusiu de ciutat. \\
+\path{dark_regions} & mitjana visible & $\leq0,26$ & Experimental & Selecciona
+blocs foscos; en algunes escenes la ROI és massa ampla. \\
+\path{water_body} & NDWI & $\geq0,10$ & Experimental & Candidat d'aigua. Només
+un cas del threshold nou va arribar a CSMR. \\
+\bottomrule
+\end{longtable}
+
+Els índexs normalitzats tenen la forma:
+
+\begin{equation}
+I(A,B)=\frac{A-B}{A+B+\epsilon},
+\end{equation}
+
+on $\epsilon$ evita divisió per zero. NDVI usa B08 i B04; GNDVI, B08 i B03;
+NDCI, B05 i B04; NDWI, B03 i B08. Els thresholds són hiperparàmetres empírics
+auditats sobre el dataset del projecte, no constants universals de teledetecció
+\cite{rouse1974ndvi,mcfeeters1996ndwi,gitelson1996gndvi,mishra2012ndci}.
+
+\section{Combinació de preset i política}
+
+Per un bloc $i$, el preset produeix una màscara binària $m_i$. La política
+focus produeix:
+
+\begin{equation}
+Q_i^{focus}=
+\begin{cases}
+\operatorname{clip}(Q_{adaptive,i}+16), & m_i=1,\\
+128, & m_i=0.
+\end{cases}
+\end{equation}
+
+Preserve-roi produeix:
+
+\begin{equation}
+Q_i^{preserve}=
+\begin{cases}
+240\ \text{o}\ 255, & m_i=1,\\
+128, & m_i=0.
+\end{cases}
+\end{equation}
+
+La mateixa màscara pot alimentar qualsevol de les dues polítiques. Aquesta
+propietat permet atribuir una diferència de resultat a la regla de qualitat i
+no a una selecció espacial diferent.
+
+\section{Classificació de cobertura}
+
+La cobertura $C$ és el percentatge de blocs amb $m_i=1$. Després de generar la
+màscara, l'anàlisi etiqueta:
+
+\begin{equation}
+\begin{array}{ll}
+\code{no\_roi}:& C=0,\\
+\code{low\_roi}:&0<C<10\%,\\
+\code{mid\_roi}:&10\%\leq C\leq70\%,\\
+\code{high\_roi}:&70\%<C<100\%,\\
+\code{all\_roi}:&C=100\%.
+\end{array}
+\end{equation}
+
+Les etiquetes no modifiquen el preset. S'utilitzen per separar casos on es pot
+mesurar una redistribució real de casos degenerats. Si $C=0$, tota la imatge
+rep tractament de fons; si $C=100\%$, no existeix fons que pugui assumir la
+distorsió. Si la ROI és molt petita i dispersa, el camp receptiu de la xarxa
+pot fer que blocs veïns a baixa qualitat afectin la reconstrucció de la regió
+protegida.
+\fi

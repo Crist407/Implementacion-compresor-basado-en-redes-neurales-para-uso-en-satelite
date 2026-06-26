@@ -1,0 +1,16 @@
+*.aux
+*.bbl
+*.blg
+*.dvi
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.ps
+*.synctex.gz
+*.toc
+main.pdf
+tesi.bst
+toc.tex

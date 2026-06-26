@@ -10,6 +10,7 @@
 #define DEFAULT_IMAGE_HEIGHT 512
 #define DEFAULT_BANDS 8
 #define DEFAULT_BLOCK_SIZE 16
+#define MAX_SAMPLE_VALUE 65535.0
 
 typedef struct {
     int block_y;
@@ -69,6 +70,11 @@ typedef enum {
     PRESET_CLOUDS,
     PRESET_BARREN_SOIL,
     PRESET_BURNED_AREA,
+    PRESET_DARK_REGIONS,
+    PRESET_LOCAL_CONTRAST,
+    PRESET_LOW_NDVI,
+    PRESET_HIGH_NDVI,
+    PRESET_CLOUD_AVOID,
     PRESET_UNIFORM,
     PRESET_MANUAL
 } SemanticPreset;
@@ -76,6 +82,8 @@ typedef enum {
 typedef enum {
     EVAL_NORMALIZED_DIFF = 0,
     EVAL_CLOUD_CBY,
+    EVAL_VISIBLE_BRIGHTNESS,
+    EVAL_VISIBLE_CONTRAST,
     EVAL_BSI,
     EVAL_BAIS2
 } EvalMode;
@@ -87,7 +95,9 @@ typedef enum {
 
 typedef enum {
     POLICY_BOOST_ONLY = 0,
-    POLICY_FOCUS
+    POLICY_FOCUS,
+    POLICY_TARGET_FOCUS,
+    POLICY_PRESERVE_ROI
 } SemanticPolicy;
 
 typedef struct {
@@ -109,6 +119,7 @@ typedef struct {
     const char* band_map_path;
     const char* roi_map_path;
     const char* roi_tsv_path;
+    const char* roi_command_path;
     SemanticPreset preset;
     BandLayout layout;
     int bands;
@@ -119,12 +130,19 @@ typedef struct {
     double adaptive_strength;
     int semantic_boost;
     int foreground_boost;
+    int foreground_q;
+    int foreground_q_set;
     int background_penalty;
     int background_q;
     int background_q_set;
+    int allow_experimental_low_q;
     SemanticPolicy policy;
     int threshold_set;
     double threshold;
+    int roi_target_psnr_set;
+    double roi_target_psnr;
+    int roi_target_mse_set;
+    double roi_target_mse;
 } Options;
 
 typedef struct {
@@ -136,6 +154,8 @@ typedef struct {
     int penalty_clamped;
     int fixed_q_applied;
     int fixed_q_clamped;
+    int target_applied;
+    int target_clamped;
     int missing_bands;
     int no_valid_pixels;
 } SemanticSummary;
@@ -151,11 +171,16 @@ static const PresetSpec PRESET_SPECS[] = {
     {PRESET_WATER,            "water",            "NDMI",  EVAL_NORMALIZED_DIFF, BAND_B08, BAND_B11, 0.2, CMP_GE},
     {PRESET_BURNED,           "burned",           "NBR",   EVAL_NORMALIZED_DIFF, BAND_B08, BAND_B12, 0.1, CMP_LE},
     {PRESET_SNOW,             "snow",             "NDSI",  EVAL_NORMALIZED_DIFF, BAND_B03, BAND_B11, 0.4, CMP_GE},
-    {PRESET_WATER_BODY,       "water_body",       "NDWI",  EVAL_NORMALIZED_DIFF, BAND_B03, BAND_B08, 0.3, CMP_GE},
+    {PRESET_WATER_BODY,       "water_body",       "NDWI",  EVAL_NORMALIZED_DIFF, BAND_B03, BAND_B08, 0.1, CMP_GE},
     {PRESET_CHLOROPHYLL,      "chlorophyll",      "NDCI",  EVAL_NORMALIZED_DIFF, BAND_B05, BAND_B04, 0.1, CMP_GE},
     {PRESET_VEGETATION_GREEN, "vegetation_green", "GNDVI", EVAL_NORMALIZED_DIFF, BAND_B08, BAND_B03, 0.5, CMP_GE},
     /* Tipo 2: evaluaciones multi-banda */
     {PRESET_CLOUDS,           "clouds",           "CBY",   EVAL_CLOUD_CBY,       BAND_B03, BAND_B04, 0.5, CMP_GE},
+    {PRESET_DARK_REGIONS,     "dark_regions",     "VIS_MEAN", EVAL_VISIBLE_BRIGHTNESS, BAND_B02, BAND_B03, 0.26, CMP_LE},
+    {PRESET_LOCAL_CONTRAST,   "local_contrast",   "VIS_STD",  EVAL_VISIBLE_CONTRAST,   BAND_B02, BAND_B03, 0.035, CMP_GE},
+    {PRESET_LOW_NDVI,         "low_ndvi",         "NDVI",     EVAL_NORMALIZED_DIFF,    BAND_B08, BAND_B04, 0.15, CMP_LE},
+    {PRESET_HIGH_NDVI,        "high_ndvi",        "NDVI",     EVAL_NORMALIZED_DIFF,    BAND_B08, BAND_B04, 0.50, CMP_GE},
+    {PRESET_CLOUD_AVOID,      "cloud_avoid",      "CBY_CLEAR", EVAL_CLOUD_CBY,         BAND_B03, BAND_B04, 0.5, CMP_LE},
     {PRESET_BARREN_SOIL,      "barren_soil",      "BSI",   EVAL_BSI,             BAND_B04, BAND_B08, 0.0, CMP_GE},
     {PRESET_BURNED_AREA,      "burned_area",      "BAIS2", EVAL_BAIS2,           BAND_B04, BAND_B12, 0.5, CMP_GE},
     /* Especiales */
@@ -176,23 +201,33 @@ static void usage(const char* argv0) {
         "  --band-map path           TSV band_name<TAB>index para layouts personalizados\n"
         "  --roi-map path            ROI manual uint8 a resolucion Q-map; !=0 es ROI\n"
         "  --roi-tsv path            ROI manual TSV con columnas block_y,block_x\n"
+        "  --roi-command path        ROI manual compacta SROI1 con CRC32 obligatorio\n"
         "  --summary-tsv path        Guarda resumen semantico por bloque\n"
         "  --q-mean Q                Presupuesto medio adaptativo (default: 204)\n"
         "  --adaptive-strength S     Intensidad adaptativa (default: 8)\n"
-        "  --semantic-policy P       boost-only|focus (default: boost-only)\n"
+        "  --semantic-policy P       boost-only|focus|target-focus|preserve-roi (default: boost-only)\n"
         "  --foreground-boost Q      Incremento Q en ROI semantica (default: 8)\n"
+        "  --foreground-q Q          Q fijo en ROI para preserve-roi (default: 255)\n"
         "  --background-penalty Q    Reduccion Q fuera de ROI en focus (default: 0)\n"
-        "  --background-q Q          Q fijo fuera de ROI en focus; precede a penalty\n"
+        "  --background-q Q          Q fijo fuera de ROI en focus/preserve-roi; precede a penalty\n"
+        "  --allow-experimental-low-q Permite background-q experimental 64..127\n"
+        "  --roi-target-psnr X       PSNR objetivo en ROI para target-focus\n"
+        "  --roi-target-mse X        MSE objetivo en ROI para target-focus\n"
         "  --semantic-boost Q        Alias legacy de --foreground-boost\n"
         "  --threshold X             Umbral manual del indice\n\n"
         "Presets disponibles:\n"
         "  Tipo 1 (indice normalizado):\n"
         "    vegetation(NDVI B08-B04)  water(NDMI B08-B11)  burned(NBR B08-B12)\n"
-        "    snow(NDSI B03-B11)  water_body(NDWI B03-B08)  chlorophyll(NDCI B05-B04)\n"
+        "    snow(NDSI B03-B11)  water_body(NDWI B03-B08 >= 0.10)  chlorophyll(NDCI B05-B04)\n"
         "    vegetation_green(GNDVI B08-B03)\n"
         "  Tipo 2 (multi-banda):\n"
         "    clouds(CBY B03,B04[,B11])  barren_soil(BSI B02,B04,B08,B11)\n"
         "    burned_area(BAIS2 B04,B06,B07,B8A,B12)\n"
+        "  Operativos automaticos 8 bandas:\n"
+        "    dark_regions(VIS_MEAN B02,B03,B04 <= 0.26)\n"
+        "    local_contrast(VIS_STD B02,B03,B04 >= 0.035)\n"
+        "    low_ndvi(NDVI B08,B04 <= 0.15)  high_ndvi(NDVI B08,B04 >= 0.50)\n"
+        "    cloud_avoid(CBY B03,B04[,B11] <= 0.50; protege no-nube)\n"
         "  Especiales:\n"
         "    uniform  manual\n\n"
         "La imagen canonica de 8 bandas se interpreta como B02,B03,B04,B05,B06,B07,B08,B8A.\n",
@@ -254,6 +289,8 @@ static SemanticPolicy parse_policy(const char* s, int* ok) {
     *ok = 1;
     if (strcmp(s, "boost-only") == 0) return POLICY_BOOST_ONLY;
     if (strcmp(s, "focus") == 0) return POLICY_FOCUS;
+    if (strcmp(s, "target-focus") == 0) return POLICY_TARGET_FOCUS;
+    if (strcmp(s, "preserve-roi") == 0) return POLICY_PRESERVE_ROI;
     *ok = 0;
     return POLICY_BOOST_ONLY;
 }
@@ -261,8 +298,14 @@ static SemanticPolicy parse_policy(const char* s, int* ok) {
 static const char* policy_name(SemanticPolicy policy) {
     switch (policy) {
         case POLICY_FOCUS: return "focus";
+        case POLICY_TARGET_FOCUS: return "target-focus";
+        case POLICY_PRESERVE_ROI: return "preserve-roi";
         default: return "boost-only";
     }
+}
+
+static int policy_uses_focus_background(SemanticPolicy policy) {
+    return policy == POLICY_FOCUS || policy == POLICY_TARGET_FOCUS || policy == POLICY_PRESERVE_ROI;
 }
 
 static const char* layout_name(BandLayout layout) {
@@ -291,9 +334,12 @@ static int parse_args(int argc, char** argv, Options* opt) {
     opt->adaptive_strength = 8.0;
     opt->semantic_boost = 8;
     opt->foreground_boost = 8;
+    opt->foreground_q = 255;
+    opt->foreground_q_set = 0;
     opt->background_penalty = 0;
     opt->background_q = 0;
     opt->background_q_set = 0;
+    opt->allow_experimental_low_q = 0;
     opt->policy = POLICY_BOOST_ONLY;
     opt->layout = LAYOUT_AUTO;
 
@@ -314,6 +360,8 @@ static int parse_args(int argc, char** argv, Options* opt) {
             opt->roi_map_path = argv[++i];
         } else if (strcmp(a, "--roi-tsv") == 0 && i + 1 < argc) {
             opt->roi_tsv_path = argv[++i];
+        } else if (strcmp(a, "--roi-command") == 0 && i + 1 < argc) {
+            opt->roi_command_path = argv[++i];
         } else if (strcmp(a, "--preset") == 0 && i + 1 < argc) {
             opt->preset = parse_preset(argv[++i]);
             if (opt->preset == PRESET_UNKNOWN) {
@@ -343,7 +391,7 @@ static int parse_args(int argc, char** argv, Options* opt) {
             int ok = 0;
             opt->policy = parse_policy(argv[++i], &ok);
             if (!ok) {
-                fprintf(stderr, "Error: --semantic-policy debe ser boost-only o focus.\n");
+                fprintf(stderr, "Error: --semantic-policy debe ser boost-only, focus, target-focus o preserve-roi.\n");
                 return -1;
             }
         } else if (strcmp(a, "--foreground-boost") == 0 && i + 1 < argc) {
@@ -355,6 +403,13 @@ static int parse_args(int argc, char** argv, Options* opt) {
         } else if (strcmp(a, "--semantic-boost") == 0 && i + 1 < argc) {
             if (parse_int(argv[++i], &opt->semantic_boost) != 0 || opt->semantic_boost < 0 || opt->semantic_boost > 255) return -1;
             opt->foreground_boost = opt->semantic_boost;
+        } else if (strcmp(a, "--foreground-q") == 0 && i + 1 < argc) {
+            if (parse_int(argv[++i], &opt->foreground_q) != 0 ||
+                opt->foreground_q < 0 || opt->foreground_q > 255) {
+                fprintf(stderr, "Error: --foreground-q debe estar en [0,255].\n");
+                return -1;
+            }
+            opt->foreground_q_set = 1;
         } else if (strcmp(a, "--background-penalty") == 0 && i + 1 < argc) {
             if (parse_int(argv[++i], &opt->background_penalty) != 0 ||
                 opt->background_penalty < 0 || opt->background_penalty > 255) {
@@ -368,6 +423,20 @@ static int parse_args(int argc, char** argv, Options* opt) {
                 return -1;
             }
             opt->background_q_set = 1;
+        } else if (strcmp(a, "--allow-experimental-low-q") == 0) {
+            opt->allow_experimental_low_q = 1;
+        } else if (strcmp(a, "--roi-target-psnr") == 0 && i + 1 < argc) {
+            if (parse_double(argv[++i], &opt->roi_target_psnr) != 0 || opt->roi_target_psnr <= 0.0) {
+                fprintf(stderr, "Error: --roi-target-psnr debe ser positivo.\n");
+                return -1;
+            }
+            opt->roi_target_psnr_set = 1;
+        } else if (strcmp(a, "--roi-target-mse") == 0 && i + 1 < argc) {
+            if (parse_double(argv[++i], &opt->roi_target_mse) != 0 || opt->roi_target_mse <= 0.0) {
+                fprintf(stderr, "Error: --roi-target-mse debe ser positivo.\n");
+                return -1;
+            }
+            opt->roi_target_mse_set = 1;
         } else if (strcmp(a, "--threshold") == 0 && i + 1 < argc) {
             if (parse_double(argv[++i], &opt->threshold) != 0) return -1;
             opt->threshold_set = 1;
@@ -387,17 +456,56 @@ static int parse_args(int argc, char** argv, Options* opt) {
         fprintf(stderr, "Error: --input es obligatorio salvo con --preset manual.\n");
         return -1;
     }
-    if (opt->preset == PRESET_MANUAL && !opt->roi_map_path && !opt->roi_tsv_path) {
-        fprintf(stderr, "Error: --preset manual requiere --roi-map o --roi-tsv.\n");
+    if (opt->preset == PRESET_MANUAL && !opt->roi_map_path && !opt->roi_tsv_path && !opt->roi_command_path) {
+        fprintf(stderr, "Error: --preset manual requiere --roi-map, --roi-tsv o --roi-command.\n");
         return -1;
     }
-    if (opt->roi_map_path && opt->roi_tsv_path) {
-        fprintf(stderr, "Error: usa --roi-map o --roi-tsv, no ambos.\n");
+    int roi_sources = 0;
+    if (opt->roi_map_path) roi_sources++;
+    if (opt->roi_tsv_path) roi_sources++;
+    if (opt->roi_command_path) roi_sources++;
+    if (roi_sources > 1) {
+        fprintf(stderr, "Error: usa solo una fuente ROI: --roi-map, --roi-tsv o --roi-command.\n");
+        return -1;
+    }
+    int target_sources = opt->roi_target_psnr_set + opt->roi_target_mse_set;
+    if (opt->policy == POLICY_TARGET_FOCUS && target_sources != 1) {
+        fprintf(stderr, "Error: target-focus requiere exactamente uno de --roi-target-psnr o --roi-target-mse.\n");
+        return -1;
+    }
+    if (opt->policy != POLICY_TARGET_FOCUS && target_sources != 0) {
+        fprintf(stderr, "Error: --roi-target-psnr/--roi-target-mse solo se usan con --semantic-policy target-focus.\n");
+        return -1;
+    }
+    if (opt->policy == POLICY_PRESERVE_ROI && !opt->background_q_set) {
+        fprintf(stderr, "Error: preserve-roi requiere --background-q para fijar la degradacion de no-ROI.\n");
+        return -1;
+    }
+    if (opt->policy == POLICY_PRESERVE_ROI && opt->foreground_q < 128 && !opt->allow_experimental_low_q) {
+        fprintf(stderr, "Error: --foreground-q < 128 requiere --allow-experimental-low-q.\n");
+        return -1;
+    }
+    if (opt->policy == POLICY_PRESERVE_ROI && opt->foreground_q < 64) {
+        fprintf(stderr, "Error: la ruta experimental solo permite foreground-q >= 64.\n");
+        return -1;
+    }
+    if (opt->background_q_set && opt->background_q < 128 && !opt->allow_experimental_low_q) {
+        fprintf(stderr, "Error: --background-q < 128 requiere --allow-experimental-low-q.\n");
         return -1;
     }
     if (opt->image_height % opt->block_size != 0 || opt->image_width % opt->block_size != 0) {
         fprintf(stderr, "Error: dimensiones no divisibles por --block-size.\n");
         return -1;
+    }
+    if (opt->allow_experimental_low_q) {
+        if (!opt->background_q_set || opt->background_q >= 128) {
+            fprintf(stderr, "Error: --allow-experimental-low-q requiere --background-q en [64,127].\n");
+            return -1;
+        }
+        if (opt->background_q < 64) {
+            fprintf(stderr, "Error: la ruta operativa experimental solo permite background-q >= 64.\n");
+            return -1;
+        }
     }
     return 0;
 }
@@ -510,6 +618,95 @@ static int select_q_adaptive_difficulty(
     double q_float = (double)q_mean + (strength * z);
     int q_raw = (int)lround(q_float);
     return clamp_int(q_raw, c->q_min, c->q_max);
+}
+
+static double target_mse_from_psnr(double psnr_db) {
+    return (MAX_SAMPLE_VALUE * MAX_SAMPLE_VALUE) / pow(10.0, psnr_db / 10.0);
+}
+
+static double lambda_from_q_model(int q, double max_lambda) {
+    return ((double)q / 255.0) * max_lambda;
+}
+
+static double mod_from_lambda(const FQBlockCalib* c, double lambda) {
+    return c->mod_a * lambda + c->mod_b;
+}
+
+static double predicted_mse_for_q(const FQBlockCalib* c, int q) {
+    double lambda = lambda_from_q_model(q, c->max_lambda);
+    double m = mod_from_lambda(c, lambda);
+    if (m <= 0.0) m = 1e-12;
+    return c->c0 + (c->c1 / (m * m));
+}
+
+static const char* feasibility_for_target(const FQBlockCalib* c, double target_mse) {
+    if (!c->valid || c->c1 <= 0.0 || c->mod_a <= 0.0 || c->max_lambda <= 0.0) {
+        return "invalid";
+    }
+    double best_mse = predicted_mse_for_q(c, c->q_max);
+    double worst_mse = predicted_mse_for_q(c, c->q_min);
+    if (target_mse < best_mse) return "too_strict";
+    if (target_mse > worst_mse) return "too_relaxed";
+    return "reachable";
+}
+
+static int select_q_for_target_mse(const FQBlockCalib* c, double target_mse, const char** reason, const char** feasibility) {
+    *feasibility = feasibility_for_target(c, target_mse);
+    if (!c->valid || c->c1 <= 0.0 || c->mod_a <= 0.0 || c->max_lambda <= 0.0) {
+        *reason = "target_fallback_invalid_calibration";
+        return clamp_int(c->q_baseline, c->q_min, c->q_max);
+    }
+    if (!(target_mse > c->c0)) {
+        *reason = "target_clamped_high_quality_floor";
+        return c->q_max;
+    }
+
+    double target_mod = sqrt(c->c1 / (target_mse - c->c0));
+    double lambda = (target_mod - c->mod_b) / c->mod_a;
+    double q_float = (lambda / c->max_lambda) * 255.0;
+    if (!isfinite(q_float)) {
+        *reason = "target_fallback_nonfinite";
+        return clamp_int(c->q_baseline, c->q_min, c->q_max);
+    }
+
+    int q_raw = (int)lround(q_float);
+    int q = clamp_int(q_raw, c->q_min, c->q_max);
+    if (q != q_raw) {
+        *reason = (q_raw < c->q_min) ? "target_clamped_low_q" : "target_clamped_high_q";
+    } else {
+        *reason = "target_model";
+    }
+    return q;
+}
+
+static int select_background_fixed_q(const Options* opt, const FQBlockCalib* c, const char** range_status) {
+    if (opt->allow_experimental_low_q && opt->background_q >= 64 && opt->background_q < 128) {
+        *range_status = "experimental_low_q";
+        return clamp_int(opt->background_q, 0, c->q_max);
+    }
+    int fixed_q = clamp_int(opt->background_q, c->q_min, c->q_max);
+    if (opt->background_q < c->q_min) {
+        *range_status = "official_clamped_low_q";
+    } else {
+        *range_status = "official";
+    }
+    return fixed_q;
+}
+
+static int select_foreground_fixed_q(const Options* opt, const FQBlockCalib* c, const char** range_status) {
+    if (opt->allow_experimental_low_q && opt->foreground_q >= 64 && opt->foreground_q < 128) {
+        *range_status = "experimental_low_q";
+        return clamp_int(opt->foreground_q, 0, c->q_max);
+    }
+    int fixed_q = clamp_int(opt->foreground_q, c->q_min, c->q_max);
+    if (opt->foreground_q < c->q_min) {
+        *range_status = "official_clamped_low_q";
+    } else if (opt->foreground_q > c->q_max) {
+        *range_status = "official_clamped_high_q";
+    } else {
+        *range_status = "official";
+    }
+    return fixed_q;
 }
 
 static int load_calibration(const char* path, FQBlockCalib* blocks, int q_width, int q_height) {
@@ -680,6 +877,239 @@ static uint8_t* load_roi_tsv(const char* path, int q_width, int q_height) {
     return roi;
 }
 
+static uint32_t crc32_bytes(const unsigned char* data, size_t len) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; ++i) {
+        crc ^= (uint32_t)data[i];
+        for (int bit = 0; bit < 8; ++bit) {
+            uint32_t mask = 0u - (crc & 1u);
+            crc = (crc >> 1) ^ (0xEDB88320u & mask);
+        }
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
+
+static int hex_digit(int c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
+static int parse_crc32_hex8(const char* s, uint32_t* out) {
+    uint32_t value = 0u;
+    for (int i = 0; i < 8; ++i) {
+        int h = hex_digit((unsigned char)s[i]);
+        if (h < 0) return -1;
+        value = (value << 4) | (uint32_t)h;
+    }
+    if (s[8] != '\0') return -1;
+    *out = value;
+    return 0;
+}
+
+static void trim_right(char* s) {
+    size_t n = strlen(s);
+    while (n > 0) {
+        unsigned char c = (unsigned char)s[n - 1];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break;
+        s[n - 1] = '\0';
+        n--;
+    }
+}
+
+static int parse_roi_range_token(const char* token, uint8_t* roi, int q_width, int q_height, int* blocks_set) {
+    const char* colon = strchr(token, ':');
+    if (!colon || colon == token || colon[1] == '\0') return -1;
+
+    char row_buf[32];
+    size_t row_len = (size_t)(colon - token);
+    if (row_len >= sizeof(row_buf)) return -1;
+    memcpy(row_buf, token, row_len);
+    row_buf[row_len] = '\0';
+
+    int row = -1;
+    if (parse_int(row_buf, &row) != 0 || row < 0 || row >= q_height) return -1;
+
+    const char* col_part = colon + 1;
+    const char* dash = strchr(col_part, '-');
+    int x0 = -1;
+    int x1 = -1;
+    if (dash) {
+        if (dash == col_part || dash[1] == '\0') return -1;
+        char x0_buf[32];
+        char x1_buf[32];
+        size_t x0_len = (size_t)(dash - col_part);
+        size_t x1_len = strlen(dash + 1);
+        if (x0_len >= sizeof(x0_buf) || x1_len >= sizeof(x1_buf)) return -1;
+        memcpy(x0_buf, col_part, x0_len);
+        x0_buf[x0_len] = '\0';
+        memcpy(x1_buf, dash + 1, x1_len + 1);
+        if (parse_int(x0_buf, &x0) != 0 || parse_int(x1_buf, &x1) != 0) return -1;
+    } else {
+        if (parse_int(col_part, &x0) != 0) return -1;
+        x1 = x0;
+    }
+    if (x0 < 0 || x1 < 0 || x0 > x1 || x1 >= q_width) return -1;
+
+    for (int x = x0; x <= x1; ++x) {
+        size_t idx = (size_t)row * (size_t)q_width + (size_t)x;
+        if (roi[idx] == 0) {
+            roi[idx] = 1;
+            (*blocks_set)++;
+        }
+    }
+    return 0;
+}
+
+static uint8_t* load_roi_command(const char* path, int q_width, int q_height) {
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: no se pudo abrir ROI command '%s'\n", path);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    long file_size = ftell(f);
+    if (file_size <= 0 || file_size > 65536) {
+        fprintf(stderr, "Error: ROI command '%s' tiene tamano invalido\n", path);
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
+
+    char* text = (char*)malloc((size_t)file_size + 1u);
+    if (!text) {
+        fprintf(stderr, "Error: memoria insuficiente para ROI command\n");
+        fclose(f);
+        return NULL;
+    }
+    size_t n = fread(text, 1, (size_t)file_size, f);
+    fclose(f);
+    if (n != (size_t)file_size) {
+        fprintf(stderr, "Error: lectura incompleta de ROI command\n");
+        free(text);
+        return NULL;
+    }
+    text[n] = '\0';
+    trim_right(text);
+
+    const char* crc_marker = ";CRC32=";
+    char* crc_pos = strstr(text, crc_marker);
+    if (!crc_pos) {
+        fprintf(stderr, "Error: ROI command requiere ;CRC32=XXXXXXXX\n");
+        free(text);
+        return NULL;
+    }
+    if (strstr(crc_pos + 1, crc_marker)) {
+        fprintf(stderr, "Error: ROI command contiene multiples CRC32\n");
+        free(text);
+        return NULL;
+    }
+
+    uint32_t expected_crc = 0u;
+    if (parse_crc32_hex8(crc_pos + strlen(crc_marker), &expected_crc) != 0) {
+        fprintf(stderr, "Error: CRC32 invalido en ROI command\n");
+        free(text);
+        return NULL;
+    }
+
+    size_t payload_len = (size_t)(crc_pos - text);
+    uint32_t actual_crc = crc32_bytes((const unsigned char*)text, payload_len);
+    if (actual_crc != expected_crc) {
+        fprintf(stderr, "Error: CRC32 ROI command no coincide: esperado %08X, calculado %08X\n",
+                expected_crc, actual_crc);
+        free(text);
+        return NULL;
+    }
+
+    *crc_pos = '\0';
+    char* payload = text;
+    if (strncmp(payload, "SROI1;", 6) != 0) {
+        fprintf(stderr, "Error: ROI command debe empezar por SROI1;\n");
+        free(text);
+        return NULL;
+    }
+
+    char* copy = (char*)malloc(strlen(payload) + 1u);
+    if (!copy) {
+        fprintf(stderr, "Error: memoria insuficiente para parsear ROI command\n");
+        free(text);
+        return NULL;
+    }
+    strcpy(copy, payload);
+
+    uint8_t* roi = (uint8_t*)calloc((size_t)q_width * (size_t)q_height, sizeof(uint8_t));
+    if (!roi) {
+        fprintf(stderr, "Error: memoria insuficiente para ROI command\n");
+        free(copy);
+        free(text);
+        return NULL;
+    }
+
+    int saw_grid = 0;
+    int saw_roi = 0;
+    int blocks_set = 0;
+    char* saveptr = NULL;
+    char* part = strtok_r(copy, ";", &saveptr);
+    while (part) {
+        if (strcmp(part, "SROI1") == 0) {
+            /* version marker */
+        } else if (strncmp(part, "GRID=", 5) == 0) {
+            int gw = -1;
+            int gh = -1;
+            if (sscanf(part + 5, "%dx%d", &gw, &gh) != 2 || gw != q_width || gh != q_height) {
+                fprintf(stderr, "Error: GRID de ROI command incompatible, esperado %dx%d\n", q_width, q_height);
+                free(roi);
+                free(copy);
+                free(text);
+                return NULL;
+            }
+            saw_grid = 1;
+        } else if (strncmp(part, "ROI=", 4) == 0) {
+            char* roi_part = part + 4;
+            if (*roi_part == '\0') {
+                fprintf(stderr, "Error: ROI command contiene ROI vacia\n");
+                free(roi);
+                free(copy);
+                free(text);
+                return NULL;
+            }
+            char* roi_save = NULL;
+            char* token = strtok_r(roi_part, ",", &roi_save);
+            while (token) {
+                if (parse_roi_range_token(token, roi, q_width, q_height, &blocks_set) != 0) {
+                    fprintf(stderr, "Error: rango ROI command invalido: '%s'\n", token);
+                    free(roi);
+                    free(copy);
+                    free(text);
+                    return NULL;
+                }
+                token = strtok_r(NULL, ",", &roi_save);
+            }
+            saw_roi = 1;
+        } else if (*part != '\0') {
+            fprintf(stderr, "Error: campo ROI command desconocido: '%s'\n", part);
+            free(roi);
+            free(copy);
+            free(text);
+            return NULL;
+        }
+        part = strtok_r(NULL, ";", &saveptr);
+    }
+
+    free(copy);
+    free(text);
+    if (!saw_grid || !saw_roi || blocks_set <= 0) {
+        fprintf(stderr, "Error: ROI command requiere GRID, ROI no vacia y al menos un bloque\n");
+        free(roi);
+        return NULL;
+    }
+    return roi;
+}
+
 static int write_qmap(const char* path, const uint8_t* qmap, size_t size) {
     FILE* f = fopen(path, "wb");
     if (!f) {
@@ -793,6 +1223,94 @@ static int block_cloud_cby_fraction(
 
     if (total <= 0) return -1;
     *fraction_out = (double)cloud_count / (double)total;
+    return 0;
+}
+
+/* ---------- Modos operativos por brillo visible ---------- */
+/* brightness = mean((B02+B03+B04)/3) con reflectancia uint16/10000. */
+static int block_visible_brightness_mean(
+    const uint16_t* raw,
+    int bands,
+    int image_height,
+    int image_width,
+    int block_size,
+    int block_y,
+    int block_x,
+    int band_b02,
+    int band_b03,
+    int band_b04,
+    double* mean_out
+) {
+    size_t band_stride = (size_t)image_height * (size_t)image_width;
+    int y0 = block_y * block_size;
+    int x0 = block_x * block_size;
+    double sum = 0.0;
+    int total = 0;
+    (void)bands;
+
+    const double SCALE = 1.0 / 10000.0;
+
+    for (int y = y0; y < y0 + block_size; ++y) {
+        size_t row_off = (size_t)y * (size_t)image_width;
+        for (int x = x0; x < x0 + block_size; ++x) {
+            size_t p = row_off + (size_t)x;
+            double b02 = (double)raw[(size_t)band_b02 * band_stride + p] * SCALE;
+            double b03 = (double)raw[(size_t)band_b03 * band_stride + p] * SCALE;
+            double b04 = (double)raw[(size_t)band_b04 * band_stride + p] * SCALE;
+            sum += (b02 + b03 + b04) / 3.0;
+            total++;
+        }
+    }
+
+    if (total <= 0) return -1;
+    *mean_out = sum / (double)total;
+    return 0;
+}
+
+/* contrast = stddev((B02+B03+B04)/3) con reflectancia uint16/10000. */
+static int block_visible_contrast_std(
+    const uint16_t* raw,
+    int bands,
+    int image_height,
+    int image_width,
+    int block_size,
+    int block_y,
+    int block_x,
+    int band_b02,
+    int band_b03,
+    int band_b04,
+    double* std_out
+) {
+    size_t band_stride = (size_t)image_height * (size_t)image_width;
+    int y0 = block_y * block_size;
+    int x0 = block_x * block_size;
+    double sum = 0.0;
+    double sum_sq = 0.0;
+    int total = 0;
+    (void)bands;
+
+    const double SCALE = 1.0 / 10000.0;
+
+    for (int y = y0; y < y0 + block_size; ++y) {
+        size_t row_off = (size_t)y * (size_t)image_width;
+        for (int x = x0; x < x0 + block_size; ++x) {
+            size_t p = row_off + (size_t)x;
+            double b02 = (double)raw[(size_t)band_b02 * band_stride + p] * SCALE;
+            double b03 = (double)raw[(size_t)band_b03 * band_stride + p] * SCALE;
+            double b04 = (double)raw[(size_t)band_b04 * band_stride + p] * SCALE;
+            double brightness = (b02 + b03 + b04) / 3.0;
+            sum += brightness;
+            sum_sq += brightness * brightness;
+            total++;
+        }
+    }
+
+    if (total <= 0) return -1;
+    double mean = sum / (double)total;
+    double variance = (sum_sq / (double)total) - (mean * mean);
+    if (variance < 0.0 && variance > -1e-15) variance = 0.0;
+    if (variance < 0.0) return -1;
+    *std_out = sqrt(variance);
     return 0;
 }
 
@@ -936,6 +1454,17 @@ int main(int argc, char** argv) {
         return 2;
     }
     double threshold = opt.threshold_set ? opt.threshold : spec->threshold;
+    double roi_target_mse = NAN;
+    double roi_target_psnr = NAN;
+    if (opt.policy == POLICY_TARGET_FOCUS) {
+        if (opt.roi_target_psnr_set) {
+            roi_target_psnr = opt.roi_target_psnr;
+            roi_target_mse = target_mse_from_psnr(opt.roi_target_psnr);
+        } else {
+            roi_target_mse = opt.roi_target_mse;
+            roi_target_psnr = 10.0 * log10((MAX_SAMPLE_VALUE * MAX_SAMPLE_VALUE) / roi_target_mse);
+        }
+    }
     int needs_raw = (opt.preset != PRESET_UNIFORM && opt.preset != PRESET_MANUAL);
 
     int q_height = opt.image_height / opt.block_size;
@@ -970,9 +1499,13 @@ int main(int argc, char** argv) {
 
     uint8_t* roi = NULL;
     if (opt.preset == PRESET_MANUAL) {
-        roi = opt.roi_map_path
-            ? load_roi_map_u8(opt.roi_map_path, q_width, q_height)
-            : load_roi_tsv(opt.roi_tsv_path, q_width, q_height);
+        if (opt.roi_map_path) {
+            roi = load_roi_map_u8(opt.roi_map_path, q_width, q_height);
+        } else if (opt.roi_tsv_path) {
+            roi = load_roi_tsv(opt.roi_tsv_path, q_width, q_height);
+        } else {
+            roi = load_roi_command(opt.roi_command_path, q_width, q_height);
+        }
         if (!roi) {
             free(blocks);
             free(qmap);
@@ -1008,6 +1541,14 @@ int main(int argc, char** argv) {
                 printf("  clouds CBY: B11 disponible -> version mejorada (88%% precision)\n");
             } else {
                 printf("  clouds CBY: B11 no disponible -> version basica (73%% precision)\n");
+            }
+            break;
+        case EVAL_VISIBLE_BRIGHTNESS:
+        case EVAL_VISIBLE_CONTRAST:
+            /* B02=a, B03=b y B04=extra[0] */
+            band_extra[0] = band_index(BAND_B04, layout, opt.bands, &band_map);
+            if (band_a < 0 || band_b < 0 || band_extra[0] < 0) {
+                bands_ok = 0;
             }
             break;
         case EVAL_BSI:
@@ -1055,7 +1596,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         fprintf(summary,
-                "block_y\tblock_x\tpreset\tindex_name\tindex_mean\tthreshold\tbase_q\tfinal_q\tsemantic_match\tforeground_boost_applied\tbackground_penalty_applied\tbackground_fixed_q_applied\treason\n");
+                "block_y\tblock_x\tpreset\tindex_name\tindex_mean\tthreshold\ttarget_psnr\ttarget_mse\ttarget_feasibility\tbase_q\ttarget_q\tfinal_q\tsemantic_match\tforeground_boost_applied\tbackground_penalty_applied\tbackground_fixed_q_applied\treason\tq_range_status\n");
     }
 
     SemanticSummary ss;
@@ -1077,7 +1618,10 @@ int main(int argc, char** argv) {
             int foreground_applied = 0;
             int background_applied = 0;
             int fixed_q_applied = 0;
+            int target_q = -1;
+            const char* target_feasibility = "not_requested";
             const char* reason = "uniform_preset";
+            const char* q_range_status = "official";
 
             if (opt.preset == PRESET_MANUAL) {
                 ss.semantic_possible++;
@@ -1085,28 +1629,47 @@ int main(int argc, char** argv) {
                 if (roi[idx] != 0) {
                     ss.semantic_matches++;
                     match = 1;
-                    int boosted = clamp_int(base_q + opt.foreground_boost, blocks[idx].q_min, blocks[idx].q_max);
-                    final_q = boosted;
-                    if (final_q > base_q) {
+                    if (opt.policy == POLICY_TARGET_FOCUS) {
+                        target_q = select_q_for_target_mse(&blocks[idx], roi_target_mse, &reason, &target_feasibility);
+                        final_q = target_q;
+                        ss.target_applied++;
+                        if (strcmp(reason, "target_model") != 0) ss.target_clamped++;
+                    } else if (opt.policy == POLICY_PRESERVE_ROI) {
+                        int fixed_q = select_foreground_fixed_q(&opt, &blocks[idx], &q_range_status);
+                        final_q = fixed_q;
                         foreground_applied = 1;
                         ss.boost_applied++;
-                        reason = (opt.policy == POLICY_FOCUS) ? "manual_focus_foreground_boost" : "manual_boost";
+                        reason = (final_q == opt.foreground_q)
+                            ? "preserve_roi_foreground_fixed_q"
+                            : "preserve_roi_foreground_fixed_q_clamped";
                     } else {
-                        ss.boost_clamped++;
-                        reason = (opt.policy == POLICY_FOCUS) ? "manual_focus_foreground_clamped" : "manual_match_clamped";
+                        int boosted = clamp_int(base_q + opt.foreground_boost, blocks[idx].q_min, blocks[idx].q_max);
+                        final_q = boosted;
+                        if (final_q > base_q) {
+                            foreground_applied = 1;
+                            ss.boost_applied++;
+                            reason = (opt.policy == POLICY_FOCUS) ? "manual_focus_foreground_boost" : "manual_boost";
+                        } else {
+                            ss.boost_clamped++;
+                            reason = (opt.policy == POLICY_FOCUS) ? "manual_focus_foreground_clamped" : "manual_match_clamped";
+                        }
                     }
-                } else if (opt.policy == POLICY_FOCUS && opt.background_q_set) {
-                    int fixed_q = clamp_int(opt.background_q, blocks[idx].q_min, blocks[idx].q_max);
+                } else if (policy_uses_focus_background(opt.policy) && opt.background_q_set) {
+                    int fixed_q = select_background_fixed_q(&opt, &blocks[idx], &q_range_status);
                     final_q = fixed_q;
                     if (final_q < base_q) {
                         fixed_q_applied = 1;
                         ss.fixed_q_applied++;
-                        reason = "manual_focus_background_fixed_q";
+                        reason = (opt.policy == POLICY_PRESERVE_ROI)
+                            ? "preserve_roi_background_fixed_q"
+                            : "manual_focus_background_fixed_q";
                     } else {
                         ss.fixed_q_clamped++;
-                        reason = "manual_focus_background_fixed_q_not_lower";
+                        reason = (opt.policy == POLICY_PRESERVE_ROI)
+                            ? "preserve_roi_background_fixed_q_not_lower"
+                            : "manual_focus_background_fixed_q_not_lower";
                     }
-                } else if (opt.policy == POLICY_FOCUS && opt.background_penalty > 0) {
+                } else if (policy_uses_focus_background(opt.policy) && opt.background_penalty > 0) {
                     int penalized = clamp_int(base_q - opt.background_penalty, blocks[idx].q_min, blocks[idx].q_max);
                     final_q = penalized;
                     if (final_q < base_q) {
@@ -1131,6 +1694,20 @@ int main(int argc, char** argv) {
                 switch (spec->eval_mode) {
                 case EVAL_CLOUD_CBY:
                     eval_ok = (block_cloud_cby_fraction(
+                        raw, opt.bands, opt.image_height, opt.image_width,
+                        opt.block_size, by, bx,
+                        band_a, band_b, band_extra[0],
+                        &index_mean) == 0);
+                    break;
+                case EVAL_VISIBLE_BRIGHTNESS:
+                    eval_ok = (block_visible_brightness_mean(
+                        raw, opt.bands, opt.image_height, opt.image_width,
+                        opt.block_size, by, bx,
+                        band_a, band_b, band_extra[0],
+                        &index_mean) == 0);
+                    break;
+                case EVAL_VISIBLE_CONTRAST:
+                    eval_ok = (block_visible_contrast_std(
                         raw, opt.bands, opt.image_height, opt.image_width,
                         opt.block_size, by, bx,
                         band_a, band_b, band_extra[0],
@@ -1165,29 +1742,48 @@ int main(int argc, char** argv) {
                 } else if (semantic_match(index_mean, threshold, spec->cmp)) {
                     ss.semantic_matches++;
                     match = 1;
-                    int boosted = clamp_int(base_q + opt.foreground_boost, blocks[idx].q_min, blocks[idx].q_max);
-                    final_q = boosted;
-                    if (final_q > base_q) {
+                    if (opt.policy == POLICY_TARGET_FOCUS) {
+                        target_q = select_q_for_target_mse(&blocks[idx], roi_target_mse, &reason, &target_feasibility);
+                        final_q = target_q;
+                        ss.target_applied++;
+                        if (strcmp(reason, "target_model") != 0) ss.target_clamped++;
+                    } else if (opt.policy == POLICY_PRESERVE_ROI) {
+                        int fixed_q = select_foreground_fixed_q(&opt, &blocks[idx], &q_range_status);
+                        final_q = fixed_q;
                         foreground_applied = 1;
                         ss.boost_applied++;
-                        reason = (opt.policy == POLICY_FOCUS) ? "focus_foreground_boost" : "semantic_boost";
+                        reason = (final_q == opt.foreground_q)
+                            ? "preserve_roi_foreground_fixed_q"
+                            : "preserve_roi_foreground_fixed_q_clamped";
                     } else {
-                        ss.boost_clamped++;
-                        reason = (opt.policy == POLICY_FOCUS) ? "focus_foreground_clamped" : "semantic_match_clamped";
+                        int boosted = clamp_int(base_q + opt.foreground_boost, blocks[idx].q_min, blocks[idx].q_max);
+                        final_q = boosted;
+                        if (final_q > base_q) {
+                            foreground_applied = 1;
+                            ss.boost_applied++;
+                            reason = (opt.policy == POLICY_FOCUS) ? "focus_foreground_boost" : "semantic_boost";
+                        } else {
+                            ss.boost_clamped++;
+                            reason = (opt.policy == POLICY_FOCUS) ? "focus_foreground_clamped" : "semantic_match_clamped";
+                        }
                     }
                 } else {
-                    if (opt.policy == POLICY_FOCUS && opt.background_q_set) {
-                        int fixed_q = clamp_int(opt.background_q, blocks[idx].q_min, blocks[idx].q_max);
+                    if (policy_uses_focus_background(opt.policy) && opt.background_q_set) {
+                        int fixed_q = select_background_fixed_q(&opt, &blocks[idx], &q_range_status);
                         final_q = fixed_q;
                         if (final_q < base_q) {
                             fixed_q_applied = 1;
                             ss.fixed_q_applied++;
-                            reason = "focus_background_fixed_q";
+                            reason = (opt.policy == POLICY_PRESERVE_ROI)
+                                ? "preserve_roi_background_fixed_q"
+                                : "focus_background_fixed_q";
                         } else {
                             ss.fixed_q_clamped++;
-                            reason = "focus_background_fixed_q_not_lower";
+                            reason = (opt.policy == POLICY_PRESERVE_ROI)
+                                ? "preserve_roi_background_fixed_q_not_lower"
+                                : "focus_background_fixed_q_not_lower";
                         }
-                    } else if (opt.policy == POLICY_FOCUS && opt.background_penalty > 0) {
+                    } else if (policy_uses_focus_background(opt.policy) && opt.background_penalty > 0) {
                         int penalized = clamp_int(base_q - opt.background_penalty, blocks[idx].q_min, blocks[idx].q_max);
                         final_q = penalized;
                         if (final_q < base_q) {
@@ -1207,13 +1803,17 @@ int main(int argc, char** argv) {
             qmap[idx] = (uint8_t)final_q;
             if (summary) {
                 if (isnan(index_mean)) {
-                    fprintf(summary, "%d\t%d\t%s\t%s\tnan\t%.9g\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
-                            by, bx, spec->name, spec->index_name, threshold, base_q, final_q,
-                            match, foreground_applied, background_applied, fixed_q_applied, reason);
+                    fprintf(summary, "%d\t%d\t%s\t%s\tnan\t%.9g\t%.9g\t%.9g\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\n",
+                            by, bx, spec->name, spec->index_name, threshold,
+                            roi_target_psnr, roi_target_mse, target_feasibility,
+                            base_q, target_q, final_q,
+                            match, foreground_applied, background_applied, fixed_q_applied, reason, q_range_status);
                 } else {
-                    fprintf(summary, "%d\t%d\t%s\t%s\t%.9g\t%.9g\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
-                            by, bx, spec->name, spec->index_name, index_mean, threshold, base_q, final_q,
-                            match, foreground_applied, background_applied, fixed_q_applied, reason);
+                    fprintf(summary, "%d\t%d\t%s\t%s\t%.9g\t%.9g\t%.9g\t%.9g\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\n",
+                            by, bx, spec->name, spec->index_name, index_mean, threshold,
+                            roi_target_psnr, roi_target_mse, target_feasibility,
+                            base_q, target_q, final_q,
+                            match, foreground_applied, background_applied, fixed_q_applied, reason, q_range_status);
                 }
             }
         }
@@ -1236,8 +1836,17 @@ int main(int argc, char** argv) {
            policy_name(opt.policy),
            opt.foreground_boost,
            opt.background_penalty);
+    if (opt.policy == POLICY_PRESERVE_ROI || opt.foreground_q_set) {
+        printf(" foreground_q=%d", opt.foreground_q);
+    }
     if (opt.background_q_set) {
         printf(" background_q=%d", opt.background_q);
+        if (opt.allow_experimental_low_q) {
+            printf(" experimental_low_q=1");
+        }
+    }
+    if (opt.policy == POLICY_TARGET_FOCUS) {
+        printf(" roi_target_psnr=%.6f roi_target_mse=%.9g", roi_target_psnr, roi_target_mse);
     }
     printf("\n");
     printf("Entrada: bands=%d height=%d width=%d block=%d layout=%s\n",
@@ -1246,13 +1855,24 @@ int main(int argc, char** argv) {
         printf("Band-map: %s\n", opt.band_map_path);
     }
     if (opt.preset == PRESET_MANUAL) {
-        printf("ROI manual: %s\n", opt.roi_map_path ? opt.roi_map_path : opt.roi_tsv_path);
+        const char* roi_source = opt.roi_map_path ? opt.roi_map_path : (opt.roi_tsv_path ? opt.roi_tsv_path : opt.roi_command_path);
+        printf("ROI manual: %s\n", roi_source);
     } else if (needs_raw) {
         switch (spec->eval_mode) {
         case EVAL_CLOUD_CBY:
             printf("Bandas CBY: B03=%d B04=%d B11=%d%s\n",
                    band_a, band_b, band_extra[0],
                    band_extra[0] < 0 ? " (no disponible, version basica)" : " (version mejorada)");
+            break;
+        case EVAL_VISIBLE_BRIGHTNESS:
+            printf("Bandas VIS_MEAN: B02=%d B03=%d B04=%d%s\n",
+                   band_a, band_b, band_extra[0],
+                   bands_ok ? "" : " (bandas insuficientes)");
+            break;
+        case EVAL_VISIBLE_CONTRAST:
+            printf("Bandas VIS_STD: B02=%d B03=%d B04=%d%s\n",
+                   band_a, band_b, band_extra[0],
+                   bands_ok ? "" : " (bandas insuficientes)");
             break;
         case EVAL_BSI:
             printf("Bandas BSI: B02=%d B04=%d B08=%d B11=%d%s\n",
@@ -1274,7 +1894,7 @@ int main(int argc, char** argv) {
     printf("Base adaptativa: q_mean=%d strength=%.6f log_mse_mean=%.6f log_mse_std=%.6f\n",
            opt.q_mean, opt.adaptive_strength, log_mean, log_std);
     print_q_summary(qmap, count);
-    printf("Semantica: possible=%d matches=%d boost_applied=%d boost_clamped=%d penalty_applied=%d penalty_clamped=%d fixed_q_applied=%d fixed_q_clamped=%d missing_bands=%d no_valid_pixels=%d\n",
+    printf("Semantica: possible=%d matches=%d boost_applied=%d boost_clamped=%d penalty_applied=%d penalty_clamped=%d fixed_q_applied=%d fixed_q_clamped=%d target_applied=%d target_clamped=%d missing_bands=%d no_valid_pixels=%d\n",
            ss.semantic_possible,
            ss.semantic_matches,
            ss.boost_applied,
@@ -1283,6 +1903,8 @@ int main(int argc, char** argv) {
            ss.penalty_clamped,
            ss.fixed_q_applied,
            ss.fixed_q_clamped,
+           ss.target_applied,
+           ss.target_clamped,
            ss.missing_bands,
            ss.no_valid_pixels);
     printf("Salida: %s\n", opt.output_qmap_path);

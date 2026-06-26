@@ -1,0 +1,152 @@
+% !TEX root = ../main.tex
+\chapter{Introducció}\label{ch:introduccio}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Introducció}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{Context i motivació}\label{sec:context}
+
+Els instruments d'observació de la Terra produeixen imatges amb una resolució
+espacial, espectral i temporal cada vegada més elevada. Aquest increment
+millora la capacitat de caracteritzar vegetació, aigua, sòl, atmosfera o
+infraestructures, però també augmenta el volum que cal emmagatzemar i
+transmetre. En una missió espacial, la capacitat de l'enllaç de baixada no
+creix necessàriament al mateix ritme que el sensor. Per tant, la compressió no
+és únicament una etapa posterior de tractament de dades: condiciona quantes
+imatges poden adquirir-se, conservar-se i enviar-se durant la vida de la
+missió \cite{blanes2014tutorial,bioucas2013hyperspectral,denis2017disruptions}.
+
+El problema s'accentua en nanosatèl·lits i altres plataformes amb recursos
+limitats. La memòria, la potència elèctrica, la capacitat de càlcul i el temps
+de contacte amb les estacions de terra són restriccions simultànies
+\cite{selva2012cubesats,nasa2017cubesat}. Comprimir a terra no resol aquesta
+situació, perquè les dades crues ja han hagut de travessar l'enllaç. La decisió
+s'ha de prendre a bord, abans de transmetre.
+
+Els estàndards CCSDS ofereixen solucions consolidades per a compressió sense
+pèrdues, amb pèrdues i gairebé sense pèrdues
+\cite{ccsds121,ccsds122,ccsds1221,ccsds123}. Paral·lelament, els còdecs basats
+en xarxes neuronals han demostrat una gran capacitat per aprendre transformades
+adaptades a les dades i obtenir bons compromisos entre la mida codificada i la
+qualitat de reconstrucció
+\cite{balle2017end,balle2018hyperprior,mijares2023reduced}. SORTENY parteix
+d'aquesta segona línia: combina transformades espectrals i espacials apreses
+per comprimir imatges multiespectrals \cite{mijares2025sorteny}.
+
+\section{Antecedent propi i problema pendent}\label{sec:antecedent_intro}
+
+Aquest treball continua un desenvolupament propi anterior que va adaptar el
+compressor de referència de SORTENY, escrit en Python i TensorFlow, a una
+implementació nativa en C \cite{anez2026treball}. Aquell desenvolupament va
+exportar els pesos entrenats a fitxers consumibles des de C, va implementar els
+operadors de la transformada d'anàlisi i va reduir l'ús de memòria mitjançant la
+reutilització de buffers. També va introduir paral·lelisme i va executar el
+compressor en una Raspberry Pi 3B+.
+
+En una imatge de prova, la versió C va reduir la memòria màxima aproximadament
+un factor $9,2\times$ i va accelerar l'execució $1,47\times$ respecte de la
+referència Python. Aquests resultats demostraven que la inferència del
+compressor podia traslladar-se a una plataforma amb menys d'un gigabyte de
+memòria, però no constituïen encara un còdec complet.
+
+Partint d'aquell resultat, quedaven cinc problemes oberts: completar la
+reconstrucció en C; fer que el fitxer generat pel compressor inclogués tot el
+que el descompressor necessita per reconstruir la imatge, sense dades auxiliars
+externes; permetre qualitats diferents dins d'una mateixa imatge; decidir
+automàticament quines regions cal protegir; i mesurar tant la mida real de les
+dades codificades com el cost computacional del sistema complet. Aquests
+problemes defineixen el punt de partida de la memòria actual.
+
+\section{Problema i preguntes de recerca}\label{sec:problema}
+
+Un còdec de qualitat uniforme assigna el mateix compromís de distorsió a tota
+la imatge. Aquesta decisió és senzilla i reproduïble, però ignora que una
+escena pot contenir zones amb valors operatius diferents. En una aplicació de
+seguiment de vegetació pot interessar conservar millor les zones vegetades i
+acceptar més distorsió a la resta. En una adquisició afectada per núvols pot
+ser preferible dedicar més dades a les zones no cobertes per núvols, on la
+superfície continua sent observable.
+
+La selecció manual de regions és útil com a instrument experimental, però no
+és una solució operativa general. Un satèl·lit no disposa d'un operador que
+inspeccioni cada imatge abans de comprimir-la. Per tant, el sistema ha de
+resoldre automàticament dues decisions diferents: identificar quines regions
+són d'interès i determinar quina qualitat s'assigna a aquestes regions i a la
+resta de la imatge. Separar les dues decisions permet canviar el criteri
+d'interès sense redissenyar el còdec.
+
+La recerca s'articula al voltant de quatre preguntes:
+
+\begin{enumerate}[label=\textbf{P\arabic*.},leftmargin=*]
+  \item Es pot completar i validar en C el procés de compressió i reconstrucció
+  de SORTENY?
+  \item Es poden identificar automàticament regions útils sense intervenció
+  manual per a cada imatge?
+  \item Es pot reduir la mida codificada redistribuint la qualitat sense
+  perjudicar la regió que es vol protegir?
+  \item És assumible el cost d'aquesta decisió i del còdec complet en una
+  plataforma amb recursos limitats?
+\end{enumerate}
+
+Les hipòtesis mesurables associades a aquestes preguntes es formulen al
+Capítol~\ref{ch:metodologia}, una vegada definits el sistema, les magnituds i
+els criteris experimentals.
+
+\section{Objectius}\label{sec:objectius}
+
+L'objectiu general és completar i avaluar una extensió en C de SORTENY capaç
+d'assignar automàticament qualitats diferents a regions d'una imatge
+multiespectral i d'executar-se en maquinari amb recursos limitats.
+
+Els objectius específics són:
+
+\begin{enumerate}[label=\textbf{O\arabic*.},leftmargin=*]
+  \item Completar i validar el compressor i el descompressor C respecte del
+  comportament esperat del model de referència.
+  \item Automatitzar la identificació de regions d'interès i l'assignació
+  espacial de qualitat, sense requerir una selecció manual per imatge.
+  \item Mesurar el compromís entre mida codificada i qualitat de reconstrucció
+  respecte d'una compressió uniforme.
+  \item Optimitzar les operacions C de més cost, conservar el comportament
+  funcional i mesurar temps i memòria en una Raspberry Pi.
+  \item Determinar en quines condicions l'estalvi de transmissió compensa el
+  càlcul addicional i identificar les limitacions que encara impedeixen una
+  adopció operativa completa.
+\end{enumerate}
+
+\section{Abast del treball}\label{sec:abast}
+
+L'avaluació utilitza imatges multiespectrals de vuit bandes i una
+implementació C executada tant en un entorn local com en una Raspberry Pi 3B+.
+El treball no entrena un nou model neuronal: parteix dels pesos existents i es
+centra a completar el còdec, controlar espacialment la qualitat i validar-ne
+el comportament. La mida codificada final es mesura amb el codificador de la
+implementació de referència; el flux C actual s'avalua separadament i encara no
+incorpora aquesta etapa final de codificació.
+
+La Raspberry Pi s'utilitza com una plataforma representativa de baix recurs,
+útil per mesurar memòria, paral·lelisme i colls d'ampolla. L'existència de
+plataformes a bord amb tecnologies COTS i prestacions comparables, com C3SatP a
+la missió Menut, justifica l'interès de la comparació
+\cite{schwaller2017a53,serra2024c3satp}. No obstant això, aquesta prova no
+constitueix una qualificació de vol: no avalua radiació, consum energètic amb
+instrumentació externa, fiabilitat de missió ni temps real per a un sensor
+concret.
+
+\section{Metodologia i organització}\label{sec:metodologia_organitzacio}
+
+El desenvolupament s'ha realitzat de manera incremental. Abans de cada canvi
+s'ha fixat una referència; després s'ha modificat un component aïllat i s'han
+comparat els artefactes resultants. Una modificació només s'ha acceptat quan
+les proves funcionals, les reconstruccions i les mesures associades han
+confirmat el comportament esperat. Les proves de major cost s'han reservat per
+als candidats que ja havien superat comprovacions més curtes.
+
+El Capítol~\ref{ch:estat_art} presenta les fonts, els estàndards i les
+alternatives considerades. El Capítol~\ref{ch:fonaments} introdueix els
+fonaments de compressió i qualitat necessaris. Els Capítols~\ref{ch:pipeline}
+i~\ref{ch:control} descriuen l'evolució del pipeline C i el control espacial.
+El Capítol~\ref{ch:metodologia} formalitza les hipòtesis i el disseny
+experimental. Els Capítols~\ref{ch:resultats} i~\ref{ch:bord} presenten els
+resultats de qualitat, compressió i execució en hardware limitat. Finalment,
+el Capítol~\ref{ch:conclusions} respon les preguntes de recerca, comprova els
+objectius i delimita el treball futur.

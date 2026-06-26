@@ -1,0 +1,302 @@
+% !TEX root = ../main.tex
+\chapter{Conclusions i treball futur}\label{ch:conclusions}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Conclusions}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{Resposta al problema plantejat}\label{sec:final_answer}
+
+Aquest treball partia d'un problema operatiu: un satèl·lit no pot dependre
+d'un operador que dibuixi una ROI abans de cada compressió. Alhora, aplicar
+qualitat uniforme a tota la imatge desaprofita bits quan només una part és
+prioritària. La solució desenvolupada combina tres elements separables:
+
+\begin{enumerate}[leftmargin=*]
+  \item un preset C identifica automàticament blocs d'interès;
+	  \item una política C assigna qualitat a ROI i fons;
+	  \item el compressor i el descompressor C permeten mesurar error, aplicar el
+	  Q-map resultant i reconstruir la imatge sense conèixer la semàntica que l'ha
+	  generat.
+\end{enumerate}
+
+La separació és la contribució de disseny principal. Permet canviar l'objectiu
+de missió sense modificar el còdec: vegetació, contrast, aigua o núvols són
+detectors; \code{focus} i \code{preserve-roi} són regles de qualitat. El Q-map
+és el contracte entre tots dos.
+
+El resultat quantitatiu principal és que \code{focus\_bgq128}, sobre 20 casos
+CSMR seleccionats de manera reproduïble, redueix el bitrate mitjà de 4,0602 a
+3,7013~bps respecte de \code{q204}. L'estalvi agregat és 8,84\%, mentre el PSNR
+de la ROI augmenta de mitjana 0,203~dB i el fons disminueix 2,204~dB respecte
+de \code{q204}, sempre amb la mateixa màscara ROI/fons. No s'ha obtingut massa
+compressió; s'ha demostrat una
+redistribució moderada, mesurable i controlada.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{p{0.7cm}>{\raggedright\arraybackslash}X}
+\toprule
+ & Resposta final \\
+\midrule
+P1 & Sí, dins l'abast experimental: el pipeline C comprimeix, descomprimeix,
+reconstrueix i conserva els artefactes necessaris amb memòria limitada. \\
+P2 & Sí, amb dependència del context: els presets automàtics substitueixen la ROI
+manual quan produeixen una cobertura interpretable, però no tots els presets són
+útils en totes les escenes. \\
+P3 & Sí, en la mostra CSMR: \code{focus\_bgq128} redueix bitrate respecte de
+\code{q204} i conserva la ROI; \code{preserve-roi} canvia el compromís cap a més
+fidelitat de ROI. \\
+P4 & Parcialment: decidir el Q-map és molt barat, però el còdec domina el cost.
+La ruta amb error mesurat és lenta; la taula precalibrada pot ser atractiva si la
+calibració és representativa. \\
+\bottomrule
+\end{tabularx}
+\caption{Resposta sintètica a les preguntes de recerca formulades al
+Capítol~\ref{ch:introduccio}.}
+\label{tab:research_question_answers}
+\end{table}
+
+\section{Compliment dels objectius}\label{sec:objective_answers}
+
+Els cinc objectius definits al Capítol~\ref{ch:introduccio} s'avaluen de manera
+explícita a la Taula~\ref{tab:objective_results}. La distinció entre
+\emph{assolit} i \emph{assolit amb abast} evita presentar com a general un
+resultat condicionat pel dataset o per la plataforma utilitzada.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{p{0.7cm}p{2.1cm}X}
+\toprule
+ & Estat & Evidència de compliment \\
+\midrule
+O1 & Assolit amb abast & S'han integrat compressor, descompressor i format de
+flux en C. Els tests i les comparacions amb la referència verifiquen el
+comportament dins les toleràncies documentades. \\
+O2 & Assolit amb abast & Els presets C identifiquen regions sense intervenció
+manual i es combinen amb polítiques de qualitat. Alguns presets continuen
+limitats per la cobertura del dataset i l'absència de bandes SWIR. \\
+O3 & Assolit en la mostra & CSMR mesura bitrate real amb fitxers \code{.tfci}
+i una màscara comuna. \code{focus\_bgq128} obté un 8,84\% d'estalvi mitjà
+respecte de \code{q204} en els 20 casos principals. Aquesta xifra correspon al
+codificador de referència, no al bitstream C sense codificació per entropia. \\
+O4 & Assolit & L'optimització C aporta un speedup total mitjà
+d'$1,205\times$ en 66 parelles Raspberry, sense fallades de paritat funcional. \\
+O5 & Assolit amb abast & La decisió semàntica representa un 0,043\% del temps
+de compressió, però calcular qualitat amb error mesurat depèn del còdec complet:
+261,32~s per compressió i 468,13~s per compressió més descompressió en
+Raspberry. L'estalvi de transmissió compensa el detector; la viabilitat de la
+ruta completa depèn del throughput, de més optimització i de completar la
+codificació per entropia o aritmètica en C. La taula precalibrada és una
+alternativa prometedora quan la calibració és transferible, perquè evita la
+passada d'error base. \\
+\bottomrule
+\end{tabularx}
+\caption{Compliment dels objectius específics formulats al
+Capítol~\ref{ch:introduccio}.}
+\label{tab:objective_results}
+\end{table}
+
+\section{Avaluació de les hipòtesis}\label{sec:hypothesis_answers}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{p{0.6cm}p{2.0cm}X}
+\toprule
+ & Estat & Resposta \\
+\midrule
+H1 & Acceptada amb abast & El pipeline C executa compressor i descompressor,
+manté els formats i funciona en menys d'1~GiB. La correspondència amb la
+referència s'ha validat amb operacions unitàries, artefactes i toleràncies; no
+s'afirma identitat universal TensorFlow--C per qualsevol plataforma. \\
+H2 & Parcialment acceptada & Diversos presets produeixen ROI interpretables
+sense operador i mantenen qualitat en CSMR. No tots els presets funcionen en
+totes les escenes i falta B11 per validar completament núvols. \\
+H3 & Acceptada en la mostra & \code{focus\_bgq128} redueix bitrate real
+respecte de \code{q204} i conserva la ROI en els casos seleccionats. El resultat no
+es generalitza encara a qualsevol sensor o distribució. \\
+H4 & Acceptada & \code{focus} afavoreix estalvi; \code{preserve-roi} fixa
+Q240/Q255 a la ROI i afavoreix fidelitat. Cap política domina simultàniament
+les dues dimensions. \\
+H5 & Acceptada & Les optimitzacions de GDN/IGDN, depth-to-space i transformada
+espectral aporten un speedup total mitjà d'1,205$\times$ amb zero fallades de
+paritat en 66 parelles Raspberry. \\
+H6 & Acceptada amb abast & Un preset semàntic tarda 0,113~s de mitjana: 0,043\%
+del temps del compressor. El coll d'ampolla és el còdec, que també determina el
+cost de calcular qualitat amb error mesurat. Amb una taula precalibrada, aquest
+cost pot reduir-se, però només si la calibració representa la missió. \\
+\bottomrule
+\end{tabularx}
+\caption{Resposta final a les hipòtesis formalitzades al
+Capítol~\ref{ch:metodologia}.}
+\label{tab:hypothesis_results}
+\end{table}
+
+\section{Contribucions assolides}\label{sec:contributions_final}
+
+Les contribucions tècniques i metodològiques es poden resumir en:
+
+\begin{itemize}[leftmargin=*]
+  \item implementació C del pipeline de compressió i descompressió SORTENY,
+  amb pesos exportats, format de bitstream documentat i validació d'operacions;
+  \item recalibració coherent de la qualitat amb $\lambda_{max}=0,05$ i
+  separació explícita de l'escala anterior;
+  \item generadors C de Q-map uniforme, objectiu global, adaptatiu i semàntic;
+  l'objectiu global s'ha validat com a mecanisme de conversió objectiu--Q amb
+  una corba canònica, no com a estadística multiimatge;
+  \item biblioteca de presets automàtics i llindars auditats, sense ROI
+  manual en la ruta operativa;
+  \item dues polítiques complementàries: \code{focus\_bgq128} i
+  \code{preserve-roi};
+  \item validació C-only de 120 retalls i validació de bitrate real amb CSMR
+  mitjançant qualitat local per bloc;
+  \item criteri de cribratge per proxies C-only, amb l'índex complet documentat
+  com a eina auxiliar i no com a mètrica final;
+  \item registre de procedència per a cada xifra utilitzada, indicant població,
+  unitat i baseline;
+  \item optimització incremental per Cortex-A53 i demostració Raspberry amb
+  mesures de temps, RSS, temperatura i throttling;
+  \item mesura separada del cost dels presets i del còdec, que permet una
+  decisió cost--benefici quantitativa sobre calcular qualitat a bord.
+\end{itemize}
+
+La contribució no és un nou model neuronal entrenat. És convertir un model de
+recerca en un sistema C controlable espacialment, verificable i executable en
+una plataforma limitada.
+
+\section{Recomanació operativa}\label{sec:operational_recommendation}
+
+La configuració recomanada depèn de l'objectiu:
+
+\begin{description}[leftmargin=3.5cm,style=nextline]
+  \item[Fallback robust] \code{q204}. Qualitat uniforme, comportament fàcil
+  d'auditar i cap dependència d'una detecció semàntica.
+  \item[Mode principal] \code{preset + focus\_bgq128}. Adequat quan existeix
+  una ROI interpretable i la missió vol reduir downlink mantenint-la.
+  \item[ROI prioritària] \code{preset + preserve-roi Q240/Q128} o Q255/Q128.
+  Adequat quan és preferible cedir part de l'estalvi per augmentar la garantia
+  de qualitat a la regió seleccionada.
+  \item[Control tècnic] \code{adaptive\_s8}. Útil per estudiar dificultat local,
+  però sense estalvi de bitrate mesurable davant de \code{q204} en la mostra
+  principal.
+  \item[Baixa cadència o calibració coneguda] Taula precalibrada. Pot evitar la
+  passada de compressor+descompressor per obtenir l'error base i estalviar uns
+  468~s per retall, sempre que la calibració sigui representativa del sensor,
+  escena i ROI esperats.
+\end{description}
+
+Aquesta recomanació assumeix que el preset selecciona una ROI interpretable. Si
+la ROI és buida, total o massa dispersa, el Capítol~\ref{ch:resultats} mostra
+que el valor operatiu baixa i que convé tornar a qualitat uniforme, canviar de
+preset o revisar el llindar.
+
+Els presets \code{cloud\_avoid}, \code{local\_contrast}, \code{vegetation},
+\code{vegetation\_green} i \code{chlorophyll} disposen d'evidència principal.
+\code{high\_ndvi} és un candidat útil després de l'auditoria experimental.
+\code{low\_ndvi}, \code{dark\_regions} i \code{water\_body} necessiten més
+cobertura. \code{clouds} i \code{cloud\_avoid} s'han de revalidar amb SWIR
+abans d'atribuir-los precisió física de detecció de núvols.
+
+\section{Limitacions}\label{sec:final_limitations}
+
+La interpretació final està condicionada per les limitacions següents:
+
+\begin{enumerate}[leftmargin=*]
+  \item El dataset té 120 retalls de vuit bandes i no inclou B11/B12.
+  \item Els 20 casos CSMR principals provenen d'un cribratge C-only; la mostra
+  és deliberadament informativa i no una estimació aleatòria de tota la
+  distribució.
+  \item Els llindars s'han ajustat sobre el dataset disponible; encara falta
+  separar conjunt de desenvolupament i conjunt de test per estimar-ne la
+  transferibilitat.
+  \item El bitstream C desa latents enters sense codificador per entropia o
+  codificador aritmètic. El bitrate final es mesura amb CSMR \code{.tfci}.
+  \item CSMR és la referència de bitrate de SORTENY amb TensorFlow Compression,
+  però no substitueix la necessitat futura d'un codificador final completament
+  en C.
+  \item PSNR i MSE mesuren fidelitat, però no el rendiment d'una aplicació
+  científica posterior.
+  \item \code{global\_target} s'ha validat amb una corba canònica per mostrar el
+  mecanisme i la saturació fora de rang; la seva precisió estadística requeriria
+  una auditoria multiimatge i multiobjectiu.
+  \item La Raspberry demostra execució de baix recurs, però les mesures estan
+  afectades pels estats de throttling registrats i no representen una cota ideal
+  del processador.
+  \item La prova Raspberry no demostra temps real, consum energètic, tolerància
+  a radiació ni qualificació espacial.
+\end{enumerate}
+
+Aquestes limitacions no invaliden la comparació interna perquè els controls
+comparteixen retalls, màscares i còdec. Sí que limiten la generalització
+externa.
+
+\section{Treball futur prioritzat}\label{sec:future_work}
+
+El següent increment hauria de prioritzar resultats de sistema, no afegir modes
+sense una pregunta experimental clara.
+
+\subsection{Codificació per entropia o aritmètica en C}
+
+La prioritat és integrar un codificador per entropia o aritmètic compatible amb
+els latents. Això permetria eliminar la dependència de CSMR per mesurar bitrate
+real, comparar temps completament en C i estudiar el cost del codificador a
+bord. El format hauria d'incloure versió, longituds, comprovació d'integritat i
+límits estrictes abans de modificar la ruta operativa validada.
+
+\subsection{Validació espectral i de dataset}
+
+Cal repetir els presets de núvol amb B11 i ampliar estacions, cobertes i
+sensors. Els llindars s'haurien d'estimar sobre un conjunt de desenvolupament
+i avaluar sobre un conjunt separat. \code{water\_body} necessita específicament
+un full complet a llindar 0,10; un únic crop CSMR no permet generalitzar.
+
+\subsection{Mètriques orientades a tasca}
+
+La ROI hauria d'avaluar-se també amb una tasca final: classificació de coberta,
+segmentació, detecció d'incendis, estimació de clorofil·la o una altra variable
+de missió. Una variació petita de PSNR pot ser irrellevant o crítica segons la
+tasca.
+
+\subsection{Rendiment i energia}
+
+El throughput del Cortex-A53 és insuficient per afirmar processament en temps
+real d'un sensor d'alta taxa. Cal perfilar convolucions, explorar NEON efectiu,
+tiling, acceleradors o un OBC més potent, i mesurar joules per retall. La
+comparació futura ha d'utilitzar el cabal del sensor i el calendari de
+contactes de la missió concreta. També cal decidir formalment quan convé usar
+error mesurat i quan convé usar una taula precalibrada: la decisió depèn de la
+cadència, energia disponible, memòria de buffer i risc de transferir una
+calibració fora del seu domini.
+
+\subsection{Qualitat multidimensional}
+
+Lambdes independents per bandes espectrals o grups de canals latents podrien
+adaptar millor el pressupost a una tasca. Les lambdes per capes internes són una
+línia més profunda: canvien la funció del model i probablement exigeixen
+redisseny i reentrenament. No s'han de presentar com una extensió directa del
+Q-map actual.
+
+\section{Conclusió final}\label{sec:final_conclusion}
+
+El treball demostra que és possible controlar espacialment un compressor
+neuronal multiespectral des de C amb una interfície simple i reproduïble. La
+selecció automàtica elimina la necessitat d'una ROI dibuixada per un operador,
+i el cost de fer-la és negligible davant del còdec. En casos representatius,
+la política focus redueix aproximadament un 8,84\% el bitrate real respecte de
+qualitat uniforme, conservant la regió seleccionada i traslladant la distorsió
+al fons. Preserve-roi ofereix una alternativa quan la fidelitat de la ROI té
+més valor que l'estalvi màxim.
+
+La implementació optimitzada funciona en Raspberry amb memòria limitada i és
+un $1,205\times$ més ràpida en speedup total mitjà que la versió baseline, cosa
+que equival a reduir el temps aproximadament un 17\%, sense canvis funcionals
+detectats. La mateixa prova mostra el límit actual: la
+latència del còdec continua sent de minuts per retall quan es calcula qualitat
+amb error mesurat. La taula precalibrada obre una ruta més lleugera si la missió
+pot assumir una calibració prèvia representativa, però no elimina la necessitat
+de validar qualitat i transferibilitat. Per tant, la conclusió és positiva però
+acotada: el control espacial és útil i barat; la prioritat per apropar el
+sistema a una missió real és augmentar el throughput, completar la codificació
+per entropia o aritmètica en C i decidir quan és acceptable substituir error
+mesurat per calibració precalculada.

@@ -1,0 +1,474 @@
+% !TEX root = ../main.tex
+\chapter{Treball previ i evolució del pipeline C}\label{ch:pipeline}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Pipeline C}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{Antecedent propi}\label{sec:antecedent}
+
+El punt de partida d'aquesta memòria és un treball propi anterior sobre la
+portabilitat de SORTENY a C \cite{anez2026treball}. Aquell treball ja havia
+demostrat que una part substancial del compressor neuronal podia executar-se
+sense el runtime de TensorFlow: es van exportar pesos, es van implementar
+operadors de la transformada d'anàlisi i es va reduir el consum de memòria amb
+buffers reutilitzables.
+
+En una imatge de prova, el compressor C anterior va passar d'uns 796,5~MiB de
+la ruta Python a uns 87~MiB, i va obtenir una acceleració aproximada
+d'$1,47\times$. La comparació dels latents va mostrar un 99,9876\% de valors
+idèntics, amb discrepàncies de $\pm1$ en una fracció petita. Aquest resultat
+era suficient per validar la direcció, però encara no constituïa un còdec
+complet: faltava una ruta de descompressió, un mecanisme de qualitat espacial,
+una validació de bitstream i una mesura de bitrate codificat.
+
+\subsection{Què s'hereta i què s'afegeix}
+
+La Taula~\ref{tab:herencia} separa el treball heretat de les aportacions
+d'aquesta memòria. La lectura important és que no es torna a entrenar SORTENY:
+es construeix una ruta C al voltant del model entrenat i se'n completa el cicle
+compressió--descompressió.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{p{2.9cm}X X X}
+\toprule
+Component & Estat al treball previ & Aportació actual & Per què importa \\
+\midrule
+Pesos entrenats & Exportació inicial de pesos de l'encoder. & Validació de
+formes, pesos d'encoder i decoder i índexs de càrrega. & Evita errors de
+layout que poden donar sortides plausibles però incorrectes. \\
+Compressor C & Transformada d'anàlisi funcional. & Integració amb informació
+de qualitat local i contenidor autocontingut. & Permet transportar la qualitat
+aplicada juntament amb els latents. \\
+Descompressor & No era la ruta principal. & Implementació completa de síntesi,
+validació de capçalera i reconstrucció RAW. & Tanca el còdec i permet verificar
+que el fitxer generat és llegible. \\
+Qualitat & Un únic paràmetre global. & Mapa local de qualitat i calibració
+associada. & Fa possible protegir unes zones i degradar-ne unes altres. \\
+Bitrate & Proxies sobre latents. & Mesura externa amb codificació real de la
+referència. & Separa compressibilitat estimada de bitrate codificat. \\
+Raspberry & Prova inicial de compressor. & Pipeline complet, optimització i
+mesura de cost de qualitat local. & Aproxima el comportament en hardware de
+baix recurs. \\
+\bottomrule
+\end{tabularx}
+\caption{Separació entre l'antecedent propi i les aportacions d'aquesta
+memòria.}
+\label{tab:herencia}
+\end{table}
+
+\section{Referència Python i contracte funcional}\label{sec:python_ref}
+
+SORTENY disposa d'una implementació Python de referència. En aquesta memòria
+no es presenta com a producte operatiu, sinó com a definició executable del
+model entrenat: conté la càrrega de checkpoints, les transformades, la
+modulació de qualitat i el codificador final de TensorFlow Compression. Els
+camins exactes del repositori i les ordres de reproducció es documenten als
+apèndixs i al repositori públic associat; en el cos principal només interessa
+la seva funció metodològica.
+
+Portar aquesta referència a C no consisteix a traduir sintaxi. En Python, el
+framework conserva molta informació de forma implícita: ordre de dimensions,
+padding de convolucions, disposició dels kernels, tipus de dades, arrodoniment,
+normalització i empaquetat final. En C, totes aquestes decisions han de quedar
+fixades de manera explícita. Un error petit en un índex pot no provocar cap
+fallada d'execució, però sí canviar els latents i, per tant, la reconstrucció.
+
+La referència Python manté dues responsabilitats durant aquest treball:
+
+\begin{itemize}[leftmargin=*]
+  \item servir com a patró funcional del model entrenat;
+  \item proporcionar una codificació final real, mitjançant fitxers
+  \code{.tfci}, per mesurar bitrate quan el contenidor C encara no inclou un
+  codificador per entropia o aritmètic equivalent.
+\end{itemize}
+
+\subsection{Frontera entre referència i ruta C}
+
+La Taula~\ref{tab:python_c_contract} resumeix la frontera. El criteri és
+pragmàtic: la ruta C ha d'executar el model i reconstruir la imatge amb recursos
+limitats; la referència conserva les eines de model i de codificació final que
+encara no s'han portat a C.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.3cm}X X}
+\toprule
+Funció & Referència de model & Ruta C operativa \\
+\midrule
+Càrrega del model & Checkpoints i objectes TensorFlow. & Fitxers de pesos
+binaris i índexs de formes. \\
+Qualitat global & Valor continu del paràmetre de qualitat. & Valor global
+equivalent quantitzat o transmès com a configuració. \\
+Qualitat local & Array local acceptat per la referència. & Mapa local de
+1.024 bytes transportat dins el contenidor C. \\
+Transformades & Operadors del framework. & Bucles C, OpenMP i buffers
+explícits. \\
+Codificació final & TensorFlow Compression, fitxer \code{.tfci}. & Latents
+enters dins un contenidor intermedi, sense codificació final eficient. \\
+Ús al projecte & Patró funcional i bitrate real. & Ruta candidata per a
+execució en hardware limitat. \\
+\bottomrule
+\end{tabularx}
+\caption{Contracte entre la referència de model i la ruta C.}
+\label{tab:python_c_contract}
+\end{table}
+
+La separació també condiciona la validació. Les diferències C--Python poden
+venir de coma flotant, arrodoniment o detalls interns del framework. En canvi,
+dues versions C comparades sota el mateix entorn han de produir la mateixa
+reconstrucció si només s'ha optimitzat el codi. Per això la paritat C--C és el
+criteri estricte quan es canvia la implementació C, mentre que la referència
+Python actua com a comprovació externa del comportament del model.
+
+\section{Implementació C del model}\label{sec:c_software_arch}
+
+El model entrenat es considera congelat. La ruta C no aprèn pesos nous ni
+modifica l'arquitectura; implementa la inferència, la lectura de pesos, la
+informació de qualitat local i el contenidor necessari perquè el decoder pugui
+reconstruir. Aquesta separació és important: les decisions científiques del
+model provenen de SORTENY, mentre que aquesta memòria se centra en fer-lo
+executables, verificable i mesurable en un entorn limitat.
+
+\subsection{Mòduls i responsabilitats}\label{sec:pesos}
+
+La implementació es divideix en responsabilitats conceptuals. Els noms exactes
+de fitxer són traçables al repositori, però la Taula~\ref{tab:c_modules} mostra
+la idea d'arquitectura.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}X X}
+\toprule
+Mòdul conceptual & Responsabilitat & Validació associada \\
+\midrule
+Càrrega de model & Llegeix pesos, formes i índexs. & Mides esperades,
+coherència de canals i presència de pesos mínims. \\
+Operadors neuronals & Executa convolucions, GDN/IGDN, capes denses i
+reordenacions. & Tests amb tensors petits i comparació amb valors esperats. \\
+Entrada i sortida RAW & Llegeix BSQ \code{uint16}, controla endianess i escriu
+la reconstrucció. & Mida exacta del RAW i rang $[0,65535]$. \\
+Compressor & Aplica transformades, modulació i quantització. & Contenidor
+estructuralment vàlid i latents coherents. \\
+Descompressor & Valida el contenidor, desfà la modulació i sintetitza la
+imatge. & Reconstrucció completa i verificació de dimensions. \\
+Generadors de qualitat & Calculen el mapa local de qualitat a partir de
+configuració o criteris automàtics. & Mapa de 1.024 bytes i traçabilitat de la
+decisió. \\
+\bottomrule
+\end{tabularx}
+\caption{Responsabilitats principals de la ruta C.}
+\label{tab:c_modules}
+\end{table}
+
+Els pesos no es carreguen com una col·lecció opaca de fitxers. Cada tensor va
+acompanyat d'un índex que indica nom, tipus, forma i mida. Aquesta informació
+és fonamental perquè la xarxa combina moltes dimensions: canals d'entrada,
+canals de sortida, kernels espacials, factors de modulació i transformades
+espectrals. Si un kernel es llegís transposat, el programa podria acabar sense
+errors però generaria una imatge incorrecta. Per això el carregador comprova la
+mida esperada i la compatibilitat de canals abans d'associar cada buffer al
+model.
+
+\subsection{Punts crítics de la traducció a C}\label{sec:operadors}
+
+Els operadors C reprodueixen la mecànica descrita al
+Capítol~\ref{ch:fonaments}: convolucions amb stride, GDN i IGDN, capes denses
+del modulador, reordenacions espacials i transformada espectral. El problema no
+és escriure una fórmula a C, sinó conservar totes les convencions que el
+framework gestiona de forma implícita.
+
+Hi ha quatre punts especialment sensibles. Primer, les convolucions redueixen
+resolució i canvien el nombre de canals; una transposició de kernel pot produir
+una sortida amb la mida correcta però amb valors incorrectes. Segon, GDN i IGDN
+fan sumes entre canals amb paràmetres apresos $\beta$ i $\gamma$; canviar
+l'ordre o confondre canals altera la normalització. Tercer, el modulador de
+qualitat genera factors que escalen els latents abans de l'arrodoniment; per
+tant, un error de qualitat es propaga directament al fitxer. Quart, les
+reordenacions del decoder no fan operacions de coma flotant, però són molt
+sensibles a l'ordre de canals i píxels.
+
+Aquests detalls expliquen per què els tests d'operadors no són un accessori:
+un error de layout pot quedar poc visible en una imatge reconstruïda, però
+trencar la paritat i fer que el decoder llegeixi una estructura diferent de la
+que el compressor ha escrit.
+
+La transformada espectral també té dues cares: anàlisi abans de la compressió
+espacial i síntesi després del decoder. La ruta oficial utilitza pesos de
+síntesi validats. El codi conserva una salvaguarda de compatibilitat per
+derivar una inversa quan falten aquests pesos, però aquesta ruta no és la base
+de cap resultat experimental de la memòria.
+
+\subsection{Per què desacoblar qualitat i inferència}
+
+Una decisió de disseny és separar la generació de qualitat local de la
+inferència del model. Un bloc de codi decideix quina qualitat ha de tenir cada
+cel·la de la graella; un altre bloc executa les transformades neuronals amb
+aquesta informació. La frontera entre tots dos blocs és el mapa de qualitat:
+una graella de 1.024 bytes que el compressor només consumeix, sense saber si
+prové d'una qualitat global, d'una calibració o d'un criteri automàtic.
+
+Aquesta separació redueix risc experimental. Afegir un criteri nou de selecció
+de regions no modifica les convolucions ni els pesos; només canvia el mapa que
+entra al compressor. Inversament, optimitzar GDN, IGDN o la transformada
+espectral no altera la decisió de quina regió és prioritària. Així es poden
+provar polítiques de qualitat i optimitzacions C per separat, amb validacions
+diferents.
+
+Aquest desacoblament és el pont cap al Capítol~\ref{ch:control}: aquí només es
+descriu que el compressor accepta una qualitat global o local; el capítol
+següent defineix formalment quins modes de qualitat s'han implementat.
+
+\section{Gestió de memòria}\label{sec:memoria}
+
+La memòria és una restricció central. Una implementació directa podria reservar
+la sortida de cada capa per a totes les bandes i conservar-la fins al final.
+Això és còmode en un framework de xarxa neuronal, però no és adequat per a una
+placa de baix recurs. La ruta C tracta els tensors intermedis com a dades amb
+vida curta: quan una capa ja no necessita una sortida anterior, aquell espai es
+pot reutilitzar.
+
+La idea principal és doble:
+
+\begin{itemize}[leftmargin=*]
+  \item utilitzar buffers contigus i reutilitzables per a les activacions més
+  grans;
+  \item processar el flux per bandes latents, en lloc de mantenir totes les
+  bandes i tots els tensors intermedis simultàniament.
+\end{itemize}
+
+Per una banda, el compressor normalitza el pla d'entrada, executa els nivells
+d'anàlisi, aplica la modulació de qualitat, arrodoneix els latents i els escriu
+al contenidor abans de passar a la banda següent. El decoder segueix la idea
+inversa: llegeix una banda latent, desfà la modulació, executa la síntesi i
+només conserva el tensor espectral final necessari per reconstruir el RAW.
+
+La diferència és qualitativa. Sense streaming, els latents intermedis de les
+vuit bandes i les sortides de capes grans competirien per memòria al mateix
+temps. Amb streaming, el pic queda dominat pels buffers més grans i pel conjunt
+de pesos, no per una còpia completa de cada etapa per cada banda.
+
+\subsection{Pressupost nominal de buffers}
+
+Les mides de la Taula~\ref{tab:memory_budget} són nominals: es calculen a
+partir de la forma del tensor i del tipus de dada, no són mesures de RSS. Per
+exemple, un tensor \code{float32} amb $128\cdot256\cdot256$ elements ocupa
+$128\cdot256\cdot256\cdot4$ bytes, és a dir, uns 32~MiB. Les mesures reals de
+Raspberry es presenten al Capítol~\ref{ch:bord}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrr}
+\toprule
+Reserva principal & Forma típica & Tipus & Mida nominal \\
+\midrule
+Entrada planificada & $8\times512\times512$ & \code{float32} & 8,0~MiB \\
+Tensor espectral & $8\times512\times512$ & \code{float32} & 8,0~MiB \\
+Buffer intermedi A & $128\times256\times256$ & \code{float32} & 32,0~MiB \\
+Buffer intermedi B & $128\times256\times256$ & \code{float32} & 32,0~MiB \\
+Latent d'una banda & $384\times32\times32$ & \code{float32} & 1,5~MiB \\
+Cache de moduladors & $256\times3072$ & \code{float32} & 3,0~MiB \\
+Pesos encoder & formes de l'índex & \code{float32} & 10,3~MiB \\
+\bottomrule
+\end{tabular}
+\caption{Ordre de magnitud de les reserves principals. Les vides útils se
+solapen parcialment i el RSS no és la suma aritmètica de totes les files.}
+\label{tab:memory_budget}
+\end{table}
+
+La Taula~\ref{tab:memory_budget} mostra per què la reutilització és necessària:
+només dos buffers intermedis ja representen desenes de MiB. Duplicar aquests
+buffers per paral·lelitzar bandes completes augmentaria ràpidament la pressió
+de memòria. Per això el paral·lelisme s'aplica dins d'operadors, píxels o
+canals, mentre el flux general manté controlat el nombre de tensors grans vius
+alhora.
+
+La cache de moduladors és una excepció deliberada. Ocupa uns pocs MiB, però
+evita recalcular la xarxa auxiliar de qualitat per cada cel·la quan molts blocs
+comparteixen el mateix valor. És una decisió de compromís: gastar una petita
+quantitat de memòria per fer més predictible el temps de compressió.
+
+\section{Cicle compressor--contenidor--descompressor}
+\label{sec:compressor_c}
+
+El pipeline C complet es pot llegir com un cicle únic:
+
+\begin{figure}[H]
+\centering
+\fbox{\begin{minipage}{0.92\textwidth}
+\centering
+RAW BSQ \code{uint16}
+$\rightarrow$ anàlisi espectral
+$\rightarrow$ anàlisi espacial
+$\rightarrow$ modulació de qualitat
+$\rightarrow$ latents enters
+$\rightarrow$ contenidor C
+$\rightarrow$ descompressió
+$\rightarrow$ RAW reconstruït
+\end{minipage}}
+\caption{Flux funcional del còdec C implementat.}
+\label{fig:pipeline_encoder}
+\end{figure}
+
+El compressor rep la imatge, els pesos i la informació de qualitat. Si la
+qualitat és global, tots els blocs comparteixen el mateix valor. Si és local,
+cada cel·la de la graella utilitza el byte corresponent. La definició exacta
+d'aquests modes queda reservada al Capítol~\ref{ch:control}; aquí només importa
+que el valor de qualitat viatja juntament amb els latents perquè el decoder
+pugui desfer la modulació aplicada.
+
+El descompressor és una aportació essencial d'aquesta memòria. Llegeix el
+contenidor, valida la capçalera, comprova dimensions, carrega els pesos de
+síntesi, reconstrueix els moduladors necessaris, desfà la modulació dels
+latents, aplica les capes de síntesi, recupera les bandes i escriu el RAW
+final. Si la sortida no té la mida esperada, la reconstrucció es considera
+invàlida encara que el procés hagi acabat.
+
+\subsection{Format del contenidor C}\label{sec:bitstream_c}
+
+El format actual és deliberadament simple. No és un contenidor CCSDS ni un
+format de vol. La disposició és:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrl}
+\toprule
+Camp & Tipus & Elements & Descripció \\
+\midrule
+Capçalera & \code{uint16} & 5 & Bandes, alçada, amplada, datatype i filtres. \\
+Mapa de qualitat & \code{uint8} & 1.024 & Qualitat per cada cel·la latent. \\
+Latents & \code{int32} & $8\cdot384\cdot32\cdot32$ & Ordre banda, canal,
+fila, columna. \\
+\bottomrule
+\end{tabular}
+\caption{Disposició del contenidor intermedi C.}
+\label{tab:bitstream}
+\end{table}
+
+La capçalera ocupa 10 bytes i el mapa de qualitat ocupa sempre 1.024 bytes. En
+la implementació actual, fins i tot una qualitat global fixa s'escriu com un
+mapa constant. Això és ineficient en sentit estricte, perquè es podria guardar
+un únic valor i un flag, però simplifica el contracte del decoder: sempre llegeix
+la mateixa estructura i sempre sap quina qualitat correspon a cada cel·la.
+
+El cost d'aquesta decisió és petit davant dels latents enters. 1.024 bytes són
+8.192 bits, és a dir:
+
+\begin{equation}
+\frac{8.192}{8\cdot512\cdot512}=0,00390625\;\mathrm{bps}.
+\end{equation}
+
+Els latents, en canvi, ocupen una mida gairebé fixa perquè encara no s'aplica
+una codificació final eficient. Per tant, la mida d'aquest contenidor no pot
+demostrar l'estalvi de bits d'una política de qualitat. La seva funció és una
+altra: transportar tot el que el decoder necessita per reconstruir i permetre
+auditar la ruta C.
+
+Aquest contenidor tampoc pretén ser el format final d'una missió. Un format
+operatiu hauria d'afegir metadades de versió, comprovació d'integritat i una
+codificació eficient dels latents. Aquí es conserva una estructura simple per
+centrar la validació en el còdec i en la qualitat aplicada.
+
+\subsection{Mida i implicacions}
+
+Per una imatge $8\times512\times512$, el nombre d'enters latents és:
+
+\begin{equation}
+N_y=8\cdot384\cdot32\cdot32=3.145.728.
+\end{equation}
+
+Els quatre factors provenen directament de la geometria interna: vuit bandes,
+384 canals latents per banda i una graella espacial latent de $32\times32$.
+Cada valor latent es guarda com un enter de 32 bits, és a dir, quatre bytes.
+Emmagatzemats com \code{int32}, ocupen 12.582.912 bytes. Afegint capçalera i
+mapa de qualitat, el contenidor C és més gran que el RAW de 4.194.304 bytes.
+No és una contradicció: és una representació intermèdia per validar
+transformada, quantització, transport de qualitat i descompressió. El guany de
+compressió només apareix quan la distribució dels latents s'explota amb un
+model probabilístic i un codificador final.
+
+Per aquest motiu, els proxies com entropia o gzip només serveixen per orientar
+la selecció de candidats. Poden indicar que uns latents semblen més fàcils de
+codificar, però no substitueixen la mida \code{.tfci} obtinguda amb la
+referència. La metodologia del Capítol~\ref{ch:metodologia} explica com
+s'utilitza aquesta referència externa per mesurar bitrate real.
+
+\subsection{Validació d'entrades}\label{sec:decoder_c}
+
+El descompressor rebutja capçaleres incompletes, dimensions zero, nombre de
+bandes no suportat, mides no divisibles per la graella latent, mapes de
+qualitat truncats, latents incomplets, bytes sobrants i pesos incoherents. Són
+comprovacions defensives: una dimensió corrupta podria provocar reserves
+desproporcionades o accessos fora de límits. El format encara no incorpora una
+comprovació d'integritat forta, de manera que detecta inconsistència
+estructural, però no tota corrupció silenciosa que mantingui les mateixes mides.
+
+\section{Validació del pipeline C}\label{sec:tests_c}
+
+La validació no es basa en una única prova. Un PSNR global correcte pot amagar
+un error petit de disposició; un test d'operador no garanteix que el fitxer
+complet sigui llegible; una execució local no prova que el consum de memòria
+sigui assumible a Raspberry. Per això s'utilitzen nivells complementaris.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.2cm}X X}
+\toprule
+Nivell & Què comprova & Què no garanteix \\
+\midrule
+Operadors aïllats & Fórmules, índexs i layout en tensors petits. & Que el
+pipeline complet gestioni bé fitxers i pesos. \\
+Integració C & Compressió seguida de descompressió amb un contenidor llegible.
+& Que el resultat coincideixi amb la referència de model. \\
+Paritat entre versions C & Que una optimització no canvia Q, latents o RAW. &
+Que el model C sigui idèntic a Python en cada operació interna. \\
+Comparació amb referència & Que la semàntica general del model es conserva. &
+Bit-exactitud absoluta en coma flotant. \\
+Validació externa de bitrate & Que la qualitat sol·licitada arriba al
+codificador real de la referència. & Que el contenidor C ja sigui un bitstream
+final eficient. \\
+Raspberry & Dependències, RSS, temperatura i temps en hardware limitat. & Una
+certificació de vol o una garantia de temps real. \\
+\bottomrule
+\end{tabularx}
+\caption{Nivells de validació del pipeline C.}
+\label{tab:test_matrix}
+\end{table}
+
+La paritat entre versions C és especialment estricta. Si es canvia una
+implementació per accelerar-la, la reconstrucció ha de romandre igual. Això
+permet atribuir qualsevol millora de temps al canvi de codi i no a una
+relaxació de qualitat. La referència Python continua sent necessària, però es
+fa servir amb una altra finalitat: comprovar que la ruta C segueix representant
+el model entrenat i obtenir, quan cal, una mesura de bitrate codificat.
+
+\section{Límit del pipeline C actual}\label{sec:limit_c}
+
+El pipeline C actual resol inferència, qualitat local, contenidor i
+reconstrucció. Encara no resol la codificació final eficient. Els latents
+s'emmagatzemen com enters dins un contenidor intermedi, sense model
+probabilístic ni codificador per entropia o aritmètic equivalent al de la
+referència. Això té dues conseqüències:
+
+\begin{enumerate}[leftmargin=*]
+  \item la mida del contenidor C és pràcticament independent del guany que
+  podria obtenir un codificador final;
+  \item el bitrate real s'ha de mesurar amb un codificador extern de referència
+  fins que aquesta etapa es porti a C.
+\end{enumerate}
+
+Aquesta separació evita una conclusió incorrecta. El contenidor C demostra que
+la ruta operativa pot transportar i reconstruir la qualitat aplicada; els
+fitxers codificats de la referència demostren quin bitrate s'obté quan els
+latents passen per una codificació final real. El treball futur natural és
+integrar també aquesta última etapa a C.
+
+La calibració exacta de l'escala de qualitat i els modes que generen el mapa es
+defineixen al Capítol~\ref{ch:control}. Aquest capítol només estableix el
+contracte que els fa possibles: la qualitat aplicada ha de viatjar amb els
+latents i ha de poder ser llegida pel decoder.

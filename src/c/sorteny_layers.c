@@ -39,6 +39,9 @@ void apply_spectral_analysis(float* restrict out_tensor, const float* restrict i
     // Sin cambios (suficientemente rápido)
     size_t B = tf->dense.C_in;
     size_t pixel_count = (size_t)H * (size_t)W;
+#ifdef _OPENMP
+    #pragma omp parallel for if (pixel_count >= 1024)
+#endif
     for (size_t p = 0; p < pixel_count; p++) {
         for (size_t b_out = 0; b_out < B; b_out++) {
             float sum = 0.0f;
@@ -195,47 +198,55 @@ void apply_gdn(float* restrict out_tensor, const float* restrict in_tensor,
     const size_t plane_size = (size_t)H * (size_t)W;
     
     if (C == 0) return;
-    float denom_stack[1024];
-    float* denom = (C <= 1024) ? denom_stack : (float*)malloc(C * sizeof(float));
-    if (!denom) {
-        fprintf(stderr, "Error: memory allocation failed in apply_gdn\n");
-        return;
-    }
 
-    for (size_t p = 0; p < plane_size; ++p) {
-        // Inicializar con Beta
-        for (size_t i = 0; i < C; ++i) {
-            float val = layer->beta[i];
-            if (val < 1e-6f) val = 1e-6f;
-            denom[i] = val;
-        }
+#ifdef _OPENMP
+    #pragma omp parallel
+#endif
+    {
+        float denom_stack[1024];
+        float* denom = (C <= 1024) ? denom_stack : (float*)malloc(C * sizeof(float));
+        if (!denom) {
+            fprintf(stderr, "Error: memory allocation failed in apply_gdn\n");
+        } else {
+#ifdef _OPENMP
+            #pragma omp for
+#endif
+            for (size_t p = 0; p < plane_size; ++p) {
+                // Inicializar con Beta
+                for (size_t i = 0; i < C; ++i) {
+                    float val = layer->beta[i];
+                    if (val < 1e-6f) val = 1e-6f;
+                    denom[i] = val;
+                }
 
-        // Acumular gamma * |x| (valor absoluto, no cuadrado)
-        for (size_t j = 0; j < C; ++j) {
-            float xj = in_tensor[j * plane_size + p];
-            float abs_xj = fabsf(xj);  // |x| en lugar de x^2
-            const float* gamma_row = layer->gamma + j * C;
-            
-            // Vectorizar este producto interno si es posible (C=128 normalmente)
-            size_t i = 0;
-            #if defined(USE_NEON)
-            float32x4_t abs_vec = vdupq_n_f32(abs_xj);
-            for (; i <= C - 4; i += 4) {
-                float32x4_t g_vec = vld1q_f32(gamma_row + i);
-                float32x4_t d_vec = vld1q_f32(denom + i);
-                d_vec = vmlaq_f32(d_vec, g_vec, abs_vec);
-                vst1q_f32(denom + i, d_vec);
+                // Acumular gamma * |x| (valor absoluto, no cuadrado)
+                for (size_t j = 0; j < C; ++j) {
+                    float xj = in_tensor[j * plane_size + p];
+                    float abs_xj = fabsf(xj);  // |x| en lugar de x^2
+                    const float* gamma_row = layer->gamma + j * C;
+
+                    // Vectorizar este producto interno si es posible (C=128 normalmente)
+                    size_t i = 0;
+                    #if defined(USE_NEON)
+                    float32x4_t abs_vec = vdupq_n_f32(abs_xj);
+                    for (; i + 3 < C; i += 4) {
+                        float32x4_t g_vec = vld1q_f32(gamma_row + i);
+                        float32x4_t d_vec = vld1q_f32(denom + i);
+                        d_vec = vmlaq_f32(d_vec, g_vec, abs_vec);
+                        vst1q_f32(denom + i, d_vec);
+                    }
+                    #endif
+                    for (; i < C; ++i) denom[i] += gamma_row[i] * abs_xj;
+                }
+
+                // División final (sin sqrt porque epsilon=1)
+                for (size_t i = 0; i < C; ++i) {
+                    out_tensor[i * plane_size + p] = in_tensor[i * plane_size + p] / denom[i];
+                }
             }
-            #endif
-            for (; i < C; ++i) denom[i] += gamma_row[i] * abs_xj;
-        }
-
-        // División final (sin sqrt porque epsilon=1)
-        for (size_t i = 0; i < C; ++i) {
-            out_tensor[i * plane_size + p] = in_tensor[i * plane_size + p] / denom[i];
+            if (denom != denom_stack) free(denom);
         }
     }
-    if (denom != denom_stack) free(denom);
 }
 
 void apply_igdn(float* restrict out_tensor, const float* restrict in_tensor,
@@ -244,42 +255,50 @@ void apply_igdn(float* restrict out_tensor, const float* restrict in_tensor,
     const size_t plane_size = (size_t)H * (size_t)W;
 
     if (C == 0) return;
-    float denom_stack[1024];
-    float* denom = (C <= 1024) ? denom_stack : (float*)malloc(C * sizeof(float));
-    if (!denom) {
-        fprintf(stderr, "Error: memory allocation failed in apply_igdn\n");
-        return;
-    }
 
-    for (size_t p = 0; p < plane_size; ++p) {
-        for (size_t i = 0; i < C; ++i) {
-            float val = layer->beta[i];
-            if (val < 1e-6f) val = 1e-6f;
-            denom[i] = val;
-        }
+#ifdef _OPENMP
+    #pragma omp parallel
+#endif
+    {
+        float denom_stack[1024];
+        float* denom = (C <= 1024) ? denom_stack : (float*)malloc(C * sizeof(float));
+        if (!denom) {
+            fprintf(stderr, "Error: memory allocation failed in apply_igdn\n");
+        } else {
+#ifdef _OPENMP
+            #pragma omp for
+#endif
+            for (size_t p = 0; p < plane_size; ++p) {
+                for (size_t i = 0; i < C; ++i) {
+                    float val = layer->beta[i];
+                    if (val < 1e-6f) val = 1e-6f;
+                    denom[i] = val;
+                }
 
-        for (size_t j = 0; j < C; ++j) {
-            float xj = in_tensor[j * plane_size + p];
-            float abs_xj = fabsf(xj);
-            const float* gamma_row = layer->gamma + j * C;
-            size_t i = 0;
-            #if defined(USE_NEON)
-            float32x4_t abs_vec = vdupq_n_f32(abs_xj);
-            for (; i + 3 < C; i += 4) {
-                float32x4_t g_vec = vld1q_f32(gamma_row + i);
-                float32x4_t d_vec = vld1q_f32(denom + i);
-                d_vec = vmlaq_f32(d_vec, g_vec, abs_vec);
-                vst1q_f32(denom + i, d_vec);
+                for (size_t j = 0; j < C; ++j) {
+                    float xj = in_tensor[j * plane_size + p];
+                    float abs_xj = fabsf(xj);
+                    const float* gamma_row = layer->gamma + j * C;
+                    size_t i = 0;
+                    #if defined(USE_NEON)
+                    float32x4_t abs_vec = vdupq_n_f32(abs_xj);
+                    for (; i + 3 < C; i += 4) {
+                        float32x4_t g_vec = vld1q_f32(gamma_row + i);
+                        float32x4_t d_vec = vld1q_f32(denom + i);
+                        d_vec = vmlaq_f32(d_vec, g_vec, abs_vec);
+                        vst1q_f32(denom + i, d_vec);
+                    }
+                    #endif
+                    for (; i < C; ++i) denom[i] += gamma_row[i] * abs_xj;
+                }
+
+                for (size_t i = 0; i < C; ++i) {
+                    out_tensor[i * plane_size + p] = in_tensor[i * plane_size + p] * denom[i];
+                }
             }
-            #endif
-            for (; i < C; ++i) denom[i] += gamma_row[i] * abs_xj;
-        }
-
-        for (size_t i = 0; i < C; ++i) {
-            out_tensor[i * plane_size + p] = in_tensor[i * plane_size + p] * denom[i];
+            if (denom != denom_stack) free(denom);
         }
     }
-    if (denom != denom_stack) free(denom);
 }
 
 void apply_conv2d_corrfalse(float* restrict out_tensor, const float* restrict in_tensor,
@@ -396,6 +415,9 @@ void apply_depth_to_space_2x(float* restrict out_tensor, const float* restrict i
     size_t in_plane = (size_t)H_in * W_in;
     size_t out_plane = (size_t)H_out * W_out;
 
+#ifdef _OPENMP
+    #pragma omp parallel for if (C_out >= 4)
+#endif
     for (int c = 0; c < C_out; ++c) {
         // tf.nn.depth_to_space (NHWC, block=2):
         // out[..., c] toma in[..., c + C_out*{0,1,2,3}] para [00,01,10,11].

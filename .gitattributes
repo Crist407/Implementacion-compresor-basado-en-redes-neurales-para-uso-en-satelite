@@ -1,1 +1,9 @@
-models/SORTENY_Sentinel2_model/variables/variables.data-00000-of-00001 filter=lfs diff=lfs merge=lfs -text
+*.raw binary
+*.bin binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.zip binary
+*.tar binary
+*.tar.gz binary

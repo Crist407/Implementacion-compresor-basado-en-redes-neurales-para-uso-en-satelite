@@ -16,6 +16,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.Zone.Identifier
+*:Zone.Identifier
 
 # Build artifacts (C)
 *.o
@@ -26,6 +27,8 @@ sorteny_compressor
 sorteny_decompressor
 sorteny_decoder_ops_test
 sorteny_fq_qmap
+sorteny_global_qmap
+sorteny_quicklook
 sorteny_semantic_qmap
 
 # TensorBoard logs and TF events
@@ -41,11 +44,79 @@ output/*
 # Notebooks
 .ipynb_checkpoints/
 
-# Large raw data — keep canonical test image, ignore large datasets
+# RAW data: publish the final 120-crop dataset and one canonical root sample.
 data/*
 !data/.gitkeep
+!data/README.md
 !data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw
+!data/Sentinel2A_crop_test/
+!data/Sentinel2A_crop_test/*.raw
 
 # Temporary files
 *.tmp
 *.log
+
+# LaTeX temporary files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.nav
+*.out.ps
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
+
+# Local-only institutional templates and review material
+INFORME FINAL/
+docs/informes muestra/
+docs/informes/Guia_explicacion_Fase2_SORTENY.md
+docs/informes/Informe_Final_Fase2_SORTENY_lambda005.*
+docs/informes/Informe_SORTENY_lambda005_revision_feedback.*
+docs/informes/ROI_quicklook_operativo.md
+docs/informes/Resumen_*
+docs/informes/Roadmap_post_run_largo.md
+docs/informes/SORTENY_Fase2_decisiones_y_evidencia.md
+docs/informes/SORTENY_lambda005_resultados_finales.md
+docs/informes/SORTENY_lineas_investigacion_post_lambda005.md
+docs/informes/feedback_informe_lambda005.md
+docs/informes/figures/
+docs/web/
+scripts/experiments/
+
+# Internal analysis scripts not part of the public quickstart.
+src/python/analysis/audit_auto_*.py
+src/python/analysis/audit_c_optimization_parity.py
+src/python/analysis/audit_csmr_dataset_smoke_bitrate.py
+src/python/analysis/audit_csmr_real_bitrate.py
+src/python/analysis/audit_extended_low_q_calibration.py
+src/python/analysis/audit_lambda005_recalibration.py
+src/python/analysis/audit_low_q_boundary.py
+src/python/analysis/audit_preserve_roi_policy.py
+src/python/analysis/audit_q_range_usage_modes.py
+src/python/analysis/audit_real_low_q_experiment.py
+src/python/analysis/audit_roi_*.py
+src/python/analysis/audit_target_focus_viability.py
+src/python/analysis/audit_wide_psnr_target_range.py
+src/python/analysis/build_auto_*.py
+src/python/analysis/build_background_q_profile_selector.py
+src/python/analysis/build_c_policy_comparison_table.py
+src/python/analysis/build_csmr_case_selection_from_full.py
+src/python/analysis/build_dataset_evidence_report.py
+src/python/analysis/build_global_*.py
+src/python/analysis/build_lambda005_*.py
+src/python/analysis/build_manual_roi_demo.py
+src/python/analysis/build_phase2_final_evidence_index.py
+src/python/analysis/build_q_range_evidence_report.py
+src/python/analysis/build_raspberry_lambda005_bundle.py
+src/python/analysis/build_roi_target_quality_demo.py
+src/python/analysis/build_visual_*.py
+src/python/analysis/monitor_lambda005_full_run.py
+
+# Local transfer scratch files
+raspberry@*

@@ -1,0 +1,399 @@
+% !TEX root = ../main.tex
+\chapter{Estat de l'art i context tecnològic}\label{ch:estat_art}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Estat de l'art}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+Aquest capítol situa el treball en el context de la compressió d'imatges
+d'observació de la Terra. Primer es presenten els requisits generals de la
+compressió multiespectral i els estàndards espacials CCSDS, amb especial
+atenció a CCSDS~122 perquè és el referent clàssic més proper a SORTENY.
+Després s'introdueixen els còdecs neuronals, el model SORTENY, el concepte de
+qualitat fixa i l'ús de regions d'interès. El capítol es tanca amb les
+restriccions d'execució a bord i amb el buit pràctic que motiva la contribució
+d'aquesta memòria.
+
+\section{Criteri de revisió bibliogràfica}\label{sec:cerca}
+
+La cerca d'informació s'ha organitzat al voltant de quatre blocs: compressió
+espacial clàssica, compressió apresa, control de qualitat local i processament
+a bord. S'han prioritzat fonts primàries o oficials: recomanacions CCSDS,
+normes ISO/IEC i ECSS, articles revisats per parells, documentació de missions
+i documentació tècnica dels fabricants. Quan s'han utilitzat fonts de context,
+com fitxes de hardware o informació institucional de missions, no s'han emprat
+per derivar xifres experimentals pròpies.
+
+La revisió no pretén enumerar totes les variants existents. Cada referència
+s'ha inclòs perquè aporta una definició, una alternativa tècnica, un mètode
+comparable o una restricció de disseny. Les xifres experimentals pròpies, en
+canvi, no depenen de la bibliografia: es vinculen a checkpoints i manifests del
+projecte. Aquesta separació evita confondre resultats de tercers amb resultats
+generats durant aquesta memòria. El treball previ propi s'utilitza com a
+antecedent publicat en línia i es cita explícitament quan se'n reutilitza una
+idea, una figura o una comparació \cite{anez2026treball}.
+
+\section{Compressió d'imatges d'observació de la Terra}\label{sec:compressio_remota}
+
+Una imatge multiespectral es pot escriure com un tensor
+$\mathbf{x}\in\mathbb{R}^{B\times H\times W}$, on $B$ és el nombre de bandes
+espectrals, $H$ l'alçada i $W$ l'amplada. La compressió intenta reduir la mida
+del fitxer aprofitant dues redundàncies principals: la redundància espacial
+entre píxels propers i la redundància espectral entre bandes correlacionades.
+En imatges hiperespectrals, on el nombre de bandes pot ser molt més gran, la
+redundància espectral és encara més important \cite{bioucas2013hyperspectral,
+guanter2015enmap}.
+
+Hi ha tres règims habituals. La compressió sense pèrdues reconstrueix
+exactament les mostres originals, però l'estalvi queda limitat per l'entropia
+de la font \cite{cover2006information,sayood2017compression}. La compressió
+gairebé sense pèrdues introdueix un error acotat. La compressió amb pèrdues
+accepta una distorsió més gran a canvi d'una reducció de dades superior. En
+observació de la Terra no hi ha una resposta universal: depèn de la missió, del
+sensor, de la calibració i de la tasca científica posterior
+\cite{blanes2014tutorial,gonzalez2025robustness}.
+
+Per comparar resultats en imatges multiespectrals, aquesta memòria expressa la
+taxa en bits per píxel i per banda:
+
+\begin{equation}
+R_{\mathrm{bps}} =
+\frac{8\,S_{\mathrm{fitxer}}}{HWB},
+\label{eq:bps_intro}
+\end{equation}
+
+on $S_{\mathrm{fitxer}}$ és la mida comprimida en bytes. Per tant, \emph{bps}
+no vol dir bits per segon en aquest document, sinó bits per mostra espacial i
+per banda espectral. Quan es parla de velocitat temporal, s'utilitza
+\emph{throughput} o temps d'execució.
+
+JPEG~2000 és una referència general de compressió d'imatge fixa amb i sense
+pèrdues \cite{iso15444}. Tot i això, les missions espacials solen prendre com
+a punt de partida les recomanacions CCSDS, perquè estan pensades per
+interoperabilitat, implementació embarcada i fluxos de dades d'instruments.
+
+\section{Estàndards CCSDS}\label{sec:ccsds}
+
+El Consultative Committee for Space Data Systems (CCSDS) defineix
+recomanacions utilitzades en missions espacials. En compressió d'imatges i
+dades multiespectrals, tres famílies són especialment rellevants: CCSDS~121,
+CCSDS~122 i CCSDS~123.
+
+\subsection{CCSDS 121 i CCSDS 123 com a context}
+
+CCSDS~121 defineix compressió sense pèrdues per a dades d'instruments. Combina
+un preprocessament opcional amb codis adaptatius, com els codis Rice, i prioritza
+descodificació exacta i baixa complexitat \cite{ccsds121}. És molt útil com a
+etapa de codificació per entropia o com a referència de robustesa, però no
+defineix per si mateix una transformada espacial amb pèrdues.
+
+CCSDS~123 està orientat a imatges multiespectrals i hiperespectrals. Es basa en
+predicció: estima el valor d'una mostra a partir del veïnatge espacial i
+espectral, i després codifica el residu \cite{ccsds123}. La versió B-2 permet
+funcionament sense pèrdues o gairebé sense pèrdues i diferents codificadors per
+entropia \cite{blanes2019parameter,kiely2018new}. Existeixen implementacions
+paral·leles i hardware accelerat \cite{bascones2017parallel,barrios2021hls,
+johansen2018fpga}, i arquitectures com SHyLoC mostren la maduresa de la línia
+CCSDS en entorns espacials \cite{barrios2020shyloc}.
+
+Tot i aquesta rellevància, CCSDS~123 no és el referent principal per situar
+aquesta memòria, perquè SORTENY és un compressor amb pèrdues basat en
+transformades apreses, no un predictor near-lossless. Per això el punt de
+referència conceptual més proper és CCSDS~122.
+
+\subsection{CCSDS 122 com a referent clàssic}
+
+CCSDS~122 és una recomanació d'imatge basada en transformada. La seva estructura
+general es pot veure a la Figura~\ref{fig:ccsds122_pipeline}: primer s'aplica
+una transformada discreta d'ondeletes (DWT) i després un codificador de plans de
+bits (BPE) genera el flux codificat \cite{ccsds122}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{ch2/ccsds122_pipeline.png}
+\caption{Estructura general de CCSDS~122: transformada DWT seguida d'un codificador de plans de bits.}
+\label{fig:ccsds122_pipeline}
+\figsource{Adaptat del treball previ propi \cite{anez2026treball}.}
+\end{figure}
+
+La DWT separa la imatge en subbandes de baixa i alta freqüència. Aplicada de
+forma separable, primer filtra files i després columnes, generant components
+com $LL$, $LH$, $HL$ i $HH$. CCSDS~122 pot utilitzar filtres 5/3 enters per a
+compressió reversible o filtres 9/7 biortogonals per a compressió amb pèrdues.
+La transformada es pot aplicar recursivament sobre la subbanda $LL$, formant
+una piràmide multiresolució com la de la Figura~\ref{fig:ccsds122_dwt}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{ch2/ccsds122_dwt_multilevel.png}
+\caption{Descomposició multiresolució amb DWT. La subbanda $LL$ concentra la informació de baixa freqüència i es pot tornar a descompondre.}
+\label{fig:ccsds122_dwt}
+\figsource{Adaptat del treball previ propi \cite{anez2026treball}.}
+\end{figure}
+
+El BPE codifica els coeficients transformats per plans de bits. Els bits més
+significatius es codifiquen abans que els menys significatius, de manera que el
+flux pot truncar-se i encara permet reconstruir una imatge completa amb menys
+qualitat. A més, l'estructura d'arbres entre coeficients pare i fills en les
+subbandes wavelet permet explotar que, si un coeficient de baixa freqüència és
+poc significatiu, sovint també ho són els seus descendents
+\cite{poupat2013cwicom}. Aquesta relació es resumeix a la
+Figura~\ref{fig:ccsds122_family}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\textwidth]{ch2/ccsds122_wavelet_family.png}
+\caption{Exemple de relació familiar entre coeficients wavelet utilitzada pel BPE.}
+\label{fig:ccsds122_family}
+\figsource{Adaptat del treball previ propi \cite{anez2026treball}.}
+\end{figure}
+
+CCSDS~122 és, per tant, un referent exigent: és madur, interpretable, ràpid i
+orientat a implementacions embarcades. En el treball previ propi es va utilitzar
+com a comparador experimental per situar el cost i la qualitat de SORTENY C
+\cite{anez2026treball}. En aquesta memòria no es repeteix aquella comparativa:
+CCSDS~122 es manté com a referència tecnològica de còdec espacial clàssic,
+mentre que els experiments se centren en una pregunta diferent: com controlar
+espacialment la qualitat dins de SORTENY i quin cost té fer-ho en C.
+
+\section{Compressió apresa i SORTENY}\label{sec:learned}
+
+\subsection{Autoencoders i models taxa--distorsió}
+
+Els còdecs apresos parteixen d'una idea similar a la dels còdecs clàssics:
+transformar la imatge a un domini on sigui més fàcil eliminar redundància,
+quantitzar i reconstruir. La diferència és que la transformada no es defineix
+manualment, com la DWT de CCSDS~122, sinó que s'aprèn a partir de dades. En la
+forma bàsica, una transformada d'anàlisi $g_a$ produeix latents
+$\mathbf{y}$, aquests latents es quantitzen, i una transformada de síntesi
+$g_s$ reconstrueix la imatge:
+
+\begin{equation}
+\mathbf{y}=g_a(\mathbf{x}), \qquad
+\hat{\mathbf{y}}=Q(\mathbf{y}), \qquad
+\hat{\mathbf{x}}=g_s(\hat{\mathbf{y}}).
+\end{equation}
+
+Els latents $\mathbf{y}$ són, per tant, la representació comprimible de la
+imatge. Si la xarxa aprèn una bona transformada, molts valors latents són petits
+o previsibles, i el codificador per entropia pot representar-los amb menys
+bits. Per això el còdec no es redueix només a una xarxa neuronal: també cal un
+model probabilístic dels latents i una etapa de codificació. Durant
+l'entrenament es minimitza una funció taxa--distorsió:
+
+\begin{equation}
+\mathcal{L}=R(\hat{\mathbf{y}})+\lambda D(\mathbf{x},\hat{\mathbf{x}}),
+\label{eq:rd_loss}
+\end{equation}
+
+on $R$ aproxima la taxa, $D$ mesura la distorsió i $\lambda$ regula el
+compromís entre totes dues. En termes intuïtius, $R$ penalitza que els latents
+siguin difícils de codificar, mentre que $D$ penalitza perdre informació visual
+o radiomètrica. Els primers autoencoders end-to-end van establir aquest esquema
+\cite{balle2017end,theis2017lossy}.
+
+La qualitat del terme $R$ depèn de com s'estimi la probabilitat dels latents.
+Els hiperpriors introdueixen informació lateral per predir millor aquesta
+distribució i millorar el codificador aritmètic
+\cite{balle2018hyperprior,minnen2018joint}. Els models de context van un pas
+més enllà: estimen la probabilitat d'un latent aprofitant informació d'altres
+latents ja coneguts \cite{cheng2020learned,he2022elic}. Això pot reduir la taxa,
+però sovint introdueix dependències seqüencials i més latència. Per a una
+implementació embarcada, aquesta millora no és automàticament acceptable si
+augmenta massa memòria o temps.
+
+La segona idea important per a SORTENY és el funcionament multiràtio. En un
+còdec après convencional, cada punt taxa--distorsió pot requerir un model
+entrenat per separat. Dumas \etal\ van mostrar que una mateixa transformada
+podia operar en diversos punts variant el pas de quantització durant la
+inferència \cite{dumas2018quantization}. SORTENY resol el problema amb una
+estratègia pròpia, basada en un modulador condicionat per $\lambda$, però la
+motivació és la mateixa: desacoblar els pesos entrenats del punt concret de
+compressió. Aquesta és la porta que després permet assignar qualitats locals.
+
+Eines com CompressAI faciliten la reproducció científica de còdecs neuronals
+\cite{begaint2020compressai}. Tot i això, una implementació per a processament
+a bord no pot dependre només d'un framework generalista: ha de controlar
+memòria, tipus de dada, paral·lelisme, fitxers de pesos i temps d'execució.
+
+\subsection{Compressió neuronal en teledetecció}
+
+L'aprenentatge profund s'ha aplicat àmpliament a dades de teledetecció
+\cite{zhu2017deep}. En compressió remota, el repte principal és que la imatge
+no és només espacial. Una fotografia RGB convencional té tres canals, mentre que
+una escena multiespectral conté bandes que responen a fenòmens físics diferents:
+vegetació, aigua, sòl, núvols o absorcions atmosfèriques. Per això un compressor
+remot ha de compactar textures i vores, però també la relació entre bandes.
+
+Les propostes neuronals aborden aquest repte de diferents maneres. Alguns
+treballs utilitzen convolucions en diverses direccions per capturar dependències
+espacials i espectrals sense tractar les bandes com canals independents
+\cite{kong2022spectral}. Altres incorporen informació de vores per preservar
+detalls estructurals que podrien perdre's amb una compressió massa agressiva
+\cite{guo2023edge}. També hi ha treballs que milloren el model estadístic amb
+priors globals o models de context de la imatge completa \cite{zhang2024global}.
+Tots aquests mecanismes apunten al mateix objectiu: que els latents siguin més
+previsibles i, per tant, més compressibles.
+
+El problema és que cada millora del model pot tenir un cost. Els mecanismes
+d'atenció, per exemple, aprenen a donar més pes a certes posicions, bandes o
+canals latents, però afegeixen operacions i memòria. Els models de context poden
+reduir bits, però introdueixen dependències. En processament a bord no n'hi ha
+prou amb millorar la corba taxa--distorsió en un ordinador de laboratori: cal
+que la inferència sigui viable en CPU, amb poca RAM i sense dependències pesants.
+
+Per això és especialment rellevant la línia de models reduïts per a execució a
+bord: menys canals, menys capes, operacions més simples o combinacions de
+compressió i denoising \cite{oliveira2021reduced,oliveira2022denoising,
+mijares2023reduced}. SORTENY s'inscriu en aquest context. Manté la idea d'una
+transformada apresa multiespectral, però incorpora una modulació que permet
+canviar el punt de qualitat sense substituir els pesos del model.
+
+L'interès institucional també és creixent. Phi-Sat-2 inclou aplicacions d'IA a
+bord, com detecció de núvols i compressió profunda \cite{guerrisi2023phisat,
+esa2024phisat}. Això no elimina els requisits de verificació, throughput i
+robustesa, però mostra que el processament neuronal embarcat ja és una línia
+operativa real.
+
+\subsection{SORTENY}
+
+SORTENY (\emph{Spectral Orthogonal Transform Encoder}) és un compressor
+multiespectral basat en autoencoder \cite{mijares2025sorteny}. La Figura
+\ref{fig:sorteny_architecture} mostra la seva arquitectura general. El model
+combina tres idees: una transformada espectral apresa, una transformada espacial
+convolucional i una modulació de qualitat.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\textwidth]{ch2/sorteny_architecture.png}
+\caption{Arquitectura conceptual de SORTENY: transformada espectral, transformada espacial, modulació de qualitat, quantització i síntesi.}
+\label{fig:sorteny_architecture}
+\figsource{Adaptat del treball previ propi \cite{anez2026treball}.}
+\end{figure}
+
+La transformada espectral redueix la redundància entre bandes projectant cada
+píxel multiespectral a un espai de característiques après. Després, la
+transformada espacial utilitza convolucions amb \emph{stride} i normalitzacions
+GDN per compactar la informació en un tensor latent més petit. Finalment, una
+subxarxa de modulació rep el paràmetre $\lambda$ i genera factors que escalen
+els latents abans de la quantització. Un $\lambda$ més alt conserva més
+informació i sol requerir més bits; un $\lambda$ més baix força més valors cap
+a zero i augmenta la compressió.
+
+Aquesta modulació és la propietat clau per a aquesta memòria. Si el model pot
+canviar de qualitat amb un paràmetre, llavors es pot assignar un paràmetre de
+qualitat diferent a cada regió de la imatge. El treball fixed-quality de
+Mijares i Verdú \etal\ estudia justament com estimar el paràmetre necessari per
+assolir un MSE objectiu local \cite{mijares2024fixed}. Aquesta base científica
+permet passar d'una compressió uniforme a una compressió amb control espacial
+de qualitat.
+
+\section{Qualitat fixa, taxa fixa i regions d'interès}\label{sec:fixed_quality_art}
+
+En compressió és important distingir taxa fixa i qualitat fixa. En un sistema
+de taxa fixa, l'usuari imposa el volum màxim de dades; per exemple, ``aquesta
+imatge ha d'ocupar com a màxim 2 MB''. El còdec intenta adaptar-se a aquest
+límit i la qualitat final és la conseqüència. En un sistema de qualitat fixa,
+l'usuari imposa una distorsió objectiu; per exemple, ``aquesta regió ha de
+mantenir un PSNR mínim''. En aquest cas, la mida final del fitxer és la
+conseqüència.
+
+La qualitat fixa és atractiva en observació de la Terra perquè la utilitat de
+la imatge no depèn només de la mida del fitxer, sinó de si les zones
+científicament rellevants conserven prou informació. A diferència del
+near-lossless, que sol limitar l'error màxim per mostra, el fixed-quality pot
+formular objectius de MSE o PSNR sobre blocs o regions
+\cite{mijares2024fixed}.
+
+La regió d'interès (ROI) introdueix una pregunta addicional: no només cal
+decidir quanta qualitat es vol, sinó on s'ha de preservar. Una imatge pot tenir
+bon PSNR global i, alhora, degradar just la zona que l'usuari vol analitzar.
+Els mètodes \emph{content-weighted} ja han explorat assignacions espacials de
+qualitat en còdecs apresos \cite{li2018content}. En una plataforma embarcada,
+però, la decisió espacial ha de ser barata, transparent i verificable.
+
+Els índexs espectrals ofereixen una via simple per definir presets automàtics.
+La forma habitual és comparar dues bandes amb un quocient normalitzat:
+
+\begin{equation}
+I(A,B)=\frac{A-B}{A+B}.
+\label{eq:spectral_index_intro}
+\end{equation}
+
+Aquesta normalització redueix l'efecte de l'escala radiomètrica i permet
+interpretar contrastos físics de manera aproximada. L'exemple més conegut és
+l'NDVI:
+
+\begin{equation}
+\mathrm{NDVI}=\frac{\mathrm{NIR}-\mathrm{Red}}
+{\mathrm{NIR}+\mathrm{Red}},
+\end{equation}
+
+on NIR és l'infraroig proper. Valors positius elevats solen indicar vegetació
+activa, perquè la vegetació reflecteix fortament al NIR i absorbeix més al
+vermell. Valors propers a zero poden correspondre a sòl nu o cobertes urbanes,
+i valors negatius sovint apareixen en aigua, ombres o superfícies amb baixa
+resposta NIR. Aquesta lectura és útil, però no és una classificació universal
+\cite{rouse1974ndvi}.
+
+Altres índexs segueixen la mateixa filosofia. L'NDWI contrasta verd i infraroig
+proper per delinear aigua \cite{mcfeeters1996ndwi}; el GNDVI substitueix el
+vermell pel verd per obtenir una variant sensible a vegetació
+\cite{gitelson1996gndvi}; i l'NDCI es va proposar per estimar clorofil·la en
+aigües productives \cite{mishra2012ndci}. El llindar depèn del sensor, de
+l'atmosfera, de la reflectància, de la resolució i de l'escena. Per això
+aquesta memòria parla de \emph{presets operatius}: regles interpretables que
+seleccionen blocs candidats a rebre més qualitat, no etiquetes físiques
+perfectes.
+
+\section{Processament a bord i hardware de baix recurs}\label{sec:onboard_art}
+
+La compressió a bord es justifica perquè l'enllaç de baixada, la memòria i el
+temps disponible en un satèl·lit són limitats \cite{selva2012cubesats,
+nasa2017cubesat}. Les missions petites i els CubeSats han impulsat l'ús de
+components comercials i processadors de baix consum, però també introdueixen
+restriccions de potència, temperatura, radiació i verificació
+\cite{denis2017disruptions}.
+
+La Raspberry Pi 3B+ utilitzada en aquesta memòria integra quatre nuclis
+Cortex-A53 i 1~GB de memòria \cite{raspberry2018brief}. No és hardware
+qualificat per a vol i pot patir problemes que no apareixen igual en un
+ordinador terrestre, com alimentació insuficient, temperatura o susceptibilitat
+a radiació \cite{guertin2021raspberry}. Tot i això, el Cortex-A53 i components
+COTS han estat estudiats per a processament espacial \cite{schwaller2017a53},
+i el C3SatP embarcat a Menut mostra una arquitectura COTS propera a aquest
+rang de recursos \cite{serra2024c3satp}. Per tant, la Raspberry no certifica
+vol, però sí és una plataforma raonable per mesurar ordres de magnitud de
+temps, memòria i comportament tèrmic.
+
+La implementació d'aquest treball utilitza C i OpenMP. OpenMP permet expressar
+paral·lelisme de memòria compartida, però exigeix verificar que no s'introdueixen
+carreres ni canvis d'ordre aritmètic \cite{openmp2021}. Per això les
+optimitzacions posteriors es validen contra una baseline C abans d'acceptar-les.
+
+Des del punt de vista d'assegurament del producte, aquesta memòria no
+desenvolupa software de vol certificat. Les normes ECSS-E-ST-40C i
+ECSS-Q-ST-80C indiquen què caldria per a un procés espacial complet:
+requisits traçables, control de configuració, validació, verificació, gestió de
+fallades i assegurament del producte software \cite{ecss40,ecss80}. Aquí es
+cobreixen traçabilitat experimental, tests, manifests i reproducció, però no
+qualificació de components, tolerància a fallades ni certificació.
+
+\section{Síntesi del buit tecnològic}\label{sec:gap}
+
+Aquest capítol mostra que les peces existeixen, però normalment apareixen
+separades. CCSDS aporta estàndards madurs i eficients; els còdecs neuronals
+aporten transformades apreses; el fixed-quality aporta control de distorsió;
+els índexs espectrals aporten regles simples per seleccionar zones; i els
+treballs d'execució a bord mostren la necessitat de controlar memòria i temps.
+
+El buit que aborda aquesta memòria és la integració: convertir una transformada
+apresa multiespectral en una ruta operativa que decideixi automàticament quines
+zones protegir, assigni qualitat local, s'executi en C sense TensorFlow durant
+l'operació i permeti mesurar tant la taxa codificada com el cost computacional
+en hardware limitat.
+
+La novetat del treball no és proposar un nou índex espectral ni un nou
+autoencoder. La contribució és construir i validar una arquitectura que uneix
+control espacial de qualitat, implementació C, presets automàtics, mesura de
+bitrate codificat i avaluació en una plataforma de baix recurs. Els capítols
+següents defineixen els fonaments tècnics necessaris i després descriuen la
+implementació i els experiments.

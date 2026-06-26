@@ -31,6 +31,51 @@ static int test_depth_to_space(void) {
     return 0;
 }
 
+static int test_depth_to_space_multi_pixel(void) {
+    // C_in=8, H=W=2 -> C_out=2, H=W=4.
+    float in[32];
+    float out[32] = {0};
+    float ref[32] = {0};
+    for (int c = 0; c < 8; ++c) {
+        for (int p = 0; p < 4; ++p) {
+            in[c * 4 + p] = (float)(c * 10 + p);
+        }
+    }
+
+    apply_depth_to_space_2x(out, in, 8, 2, 2);
+
+    const int C_out = 2;
+    const int H_in = 2, W_in = 2;
+    const int H_out = 4, W_out = 4;
+    const int in_plane = H_in * W_in;
+    const int out_plane = H_out * W_out;
+    for (int c = 0; c < C_out; ++c) {
+        int c0 = c + C_out * 0;
+        int c1 = c + C_out * 1;
+        int c2 = c + C_out * 2;
+        int c3 = c + C_out * 3;
+        for (int y = 0; y < H_in; ++y) {
+            for (int x = 0; x < W_in; ++x) {
+                int in_idx = y * W_in + x;
+                int oy = y * 2;
+                int ox = x * 2;
+                ref[c * out_plane + oy * W_out + ox] = in[c0 * in_plane + in_idx];
+                ref[c * out_plane + oy * W_out + ox + 1] = in[c1 * in_plane + in_idx];
+                ref[c * out_plane + (oy + 1) * W_out + ox] = in[c2 * in_plane + in_idx];
+                ref[c * out_plane + (oy + 1) * W_out + ox + 1] = in[c3 * in_plane + in_idx];
+            }
+        }
+    }
+
+    for (int i = 0; i < 32; ++i) {
+        if (!almost_equal(out[i], ref[i], 1e-7f)) {
+            fprintf(stderr, "depth_to_space multi mismatch at %d: got=%.6f ref=%.6f\n", i, out[i], ref[i]);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static void conv_corrfalse_reference(float* out, const float* in, const float* k, const float* b,
                                      int H, int W, int kH, int kW) {
     int pad_y = kH / 2, pad_x = kW / 2;
@@ -94,6 +139,81 @@ static int test_conv_corrfalse(void) {
     return 0;
 }
 
+static int test_spectral_analysis(void) {
+    // 3 bandas, 2 píxeles. La matriz kernel se indexa b_in * B + b_out.
+    float in[6] = {
+        1.0f, 2.0f,
+        3.0f, 4.0f,
+        5.0f, 6.0f
+    };
+    float kernel[9] = {
+        1.0f, 0.0f, 2.0f,
+        0.5f, 1.0f, 0.0f,
+        0.0f, 1.5f, 1.0f
+    };
+    float out[6] = {0};
+    float ref[6] = {0};
+    SpectralTransform tf;
+    memset(&tf, 0, sizeof(tf));
+    tf.dense.kernel = kernel;
+    tf.dense.C_in = 3;
+    tf.dense.C_out = 3;
+
+    apply_spectral_analysis(out, in, &tf, 1, 2);
+
+    for (int p = 0; p < 2; ++p) {
+        for (int b_out = 0; b_out < 3; ++b_out) {
+            float sum = 0.0f;
+            for (int b_in = 0; b_in < 3; ++b_in) {
+                sum += in[b_in * 2 + p] * kernel[b_in * 3 + b_out];
+            }
+            ref[b_out * 2 + p] = sum;
+        }
+    }
+
+    for (int i = 0; i < 6; ++i) {
+        if (!almost_equal(out[i], ref[i], 1e-6f)) {
+            fprintf(stderr, "spectral_analysis mismatch at %d: got=%.6f ref=%.6f\n", i, out[i], ref[i]);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int test_gdn(void) {
+    // 2 canales, 2 píxeles por canal.
+    float in[4] = {2.0f, 4.0f, -1.0f, 3.0f};
+    float out[4] = {0};
+    float beta[2] = {1.0f, 2.0f};
+    // gamma[j,i]
+    float gamma[4] = {
+        0.5f, 0.1f,
+        0.2f, 0.4f
+    };
+    GDNLayer gdn;
+    memset(&gdn, 0, sizeof(gdn));
+    gdn.beta = beta;
+    gdn.gamma = gamma;
+    gdn.C = 2;
+    gdn.epsilon = 1.0f;
+
+    apply_gdn(out, in, &gdn, 1, 2);
+
+    float ref[4] = {
+        2.0f / 2.2f,
+        4.0f / 3.6f,
+        -1.0f / 2.6f,
+        3.0f / 3.6f
+    };
+    for (int i = 0; i < 4; ++i) {
+        if (!almost_equal(out[i], ref[i], 1e-6f)) {
+            fprintf(stderr, "gdn mismatch at %d: got=%.6f ref=%.6f\n", i, out[i], ref[i]);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int test_igdn(void) {
     // 2 canales, 1 píxel.
     float in[2] = {2.0f, -1.0f};
@@ -125,7 +245,10 @@ static int test_igdn(void) {
 int main(void) {
     int rc = 0;
     rc |= test_depth_to_space();
+    rc |= test_depth_to_space_multi_pixel();
     rc |= test_conv_corrfalse();
+    rc |= test_spectral_analysis();
+    rc |= test_gdn();
     rc |= test_igdn();
 
     if (rc == 0) {

@@ -1,0 +1,46 @@
+% !TEX root = main.tex
+\chapter*{Abstract\label{Abstract}}
+\addcontentsline{toc}{chapter}{Abstract}
+\fancyhead[RE]{\slshape \textsf{Abstract}} %
+\fancyhead[LO]{\slshape \textsf{Abstract}} %
+
+\begin{otherlanguage*}{english}
+
+Earth-observation satellites acquire increasing volumes of multispectral data
+under constraints on downlink capacity, memory, and on-board processing. This
+thesis implements the compression and decompression pipeline of SORTENY, a
+neural multispectral image codec, in C and extends it with spatial quality
+control that does not require manual selection of regions of interest.
+
+Quality is assigned block-wise through maps generated automatically from the
+spectral and spatial content of the image. Detectors identify priority blocks,
+and quality policies determine how fidelity is distributed between those
+blocks and the background. Two complementary strategies were studied: one
+prioritizes bit savings by degrading non-priority regions, whereas the other
+assigns a fixed high quality to the detected region to favor its preservation.
+
+The evaluation included 120 eight-band Sentinel-2 crops. The coded bitrate was
+subsequently measured with the reference pipeline on 20 selected crops. The
+bit-saving strategy reduced the mean bitrate by 8.84\% relative to applying
+uniform quality to the whole image, while maintaining or slightly improving
+fidelity in the prioritized regions and concentrating degradation in the
+background. The preservation strategy protected those regions further at the
+cost of a smaller bitrate reduction.
+
+The C implementation was also evaluated on a Raspberry Pi 3B+ as a
+representative resource-constrained platform. Relative to the initial C version
+running with the same four threads, the introduced optimizations reduced mean
+total runtime by 17.0\%, equivalent to a $1.205\times$ speed-up, with no
+detected functional changes or relevant increase in memory use. Automatic
+quality-map generation accounted for less than 0.05\% of the codec runtime.
+Therefore, spatial decision has negligible cost, and neural codec execution
+remains the main bottleneck. The current C bitstream still lacks the final
+entropy or arithmetic coder. The Raspberry is used as a computational proxy
+for a resource-constrained on-board platform; validation on the final hardware
+of a specific mission remains outside the scope of this work.
+
+\textbf{Keywords:} multispectral image compression, learned compression,
+fixed-quality compression, region of interest, on-board processing, embedded
+systems, Raspberry Pi, quality map.
+
+\end{otherlanguage*}

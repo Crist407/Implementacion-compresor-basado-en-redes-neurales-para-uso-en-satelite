@@ -1,0 +1,575 @@
+% !TEX root = ../main.tex
+\chapter{Fonaments tècnics}\label{ch:fonaments}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Fonaments tècnics}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{Dades multiespectrals i rang numèric}\label{sec:dades_multi}
+
+Una adquisició multiespectral conté diverses mesures de la mateixa superfície
+en intervals de longitud d'ona diferents. A Sentinel-2, per exemple, les bandes
+B02, B03, B04 i B08 corresponen aproximadament al blau, verd, vermell i
+infraroig proper; altres bandes cobreixen el red edge, vapor d'aigua o SWIR
+\cite{esa2015sentinel2}. El producte original no té totes les bandes a la
+mateixa resolució espacial. El conjunt de dades utilitzat en aquesta memòria
+parteix de retalls ja preparats amb vuit bandes i una graella comuna de
+$512\times512$ mostres.
+
+La representació d'entrada és:
+
+\begin{equation}
+\mathbf{x}\in\{0,\ldots,65535\}^{B\times H\times W},
+\qquad B=8,\;H=W=512.
+\label{eq:input_tensor}
+\end{equation}
+
+El límit superior $65535$ no és arbitrari: és $2^{16}-1$, el valor màxim d'un
+enter sense signe de 16 bits. Els fitxers RAW d'entrada s'emmagatzemen en aquest
+format \code{uint16}. Abans d'entrar a la xarxa, les mostres es normalitzen a
+l'interval aproximat $[0,1]$ dividint per aquest mateix valor, tal com es va
+corregir i validar en la implementació C del treball previ
+\cite{anez2026treball}.
+
+La mida crua d'un retall és:
+
+\begin{equation}
+S_{\mathrm{raw}}=BHW\cdot2
+=8\cdot512\cdot512\cdot2
+=4\,194\,304\;\mathrm{bytes}.
+\label{eq:raw_size}
+\end{equation}
+
+En aquesta memòria, quan s'utilitza \emph{bps}, es mesuren bits per mostra
+espectral, és a dir, el denominador és $BHW$. Això és important perquè una
+imatge multiespectral no conté només píxels espacials: conté píxels per banda.
+
+La compressió és possible perquè hi ha redundància. La correlació espacial
+permet predir una mostra a partir de les veïnes. La correlació espectral permet
+expressar una banda a partir de combinacions d'altres bandes. SORTENY tracta
+aquestes dues fonts de redundància amb transformades apreses.
+
+\section{SORTENY des del punt de vista de la implementació}
+\label{sec:arquitectura}
+
+Després de situar SORTENY en el context dels còdecs neuronals per a observació
+de la Terra, cal concretar quins elements interns fan possible el control de
+qualitat que s'estudia en aquesta memòria. En particular, aquest capítol
+descriu la geometria de la xarxa, les operacions amb més cost computacional, el
+paper del modulador de qualitat i les mètriques que s'utilitzaran per avaluar
+els resultats.
+
+El pipeline conceptual és:
+
+\begin{equation}
+\mathbf{x}\xrightarrow{g_a}
+\mathbf{y}\xrightarrow{\mathcal{Q}_{\lambda}}
+\hat{\mathbf{y}}\xrightarrow{g_s}\hat{\mathbf{x}}.
+\label{eq:sorteny_pipeline}
+\end{equation}
+
+$g_a$ és la transformada d'anàlisi, $\mathbf{y}$ són els latents,
+$\mathcal{Q}_{\lambda}$ és la quantització condicionada pel paràmetre de
+qualitat i $g_s$ és la transformada de síntesi. Els pesos ja estan entrenats.
+El treball d'aquesta memòria es centra en executar i controlar aquesta
+inferència, no en reentrenar la xarxa.
+
+\subsection{Transformada espectral}
+
+La transformada espectral combina les $B$ bandes en cada posició espacial. En
+forma simplificada:
+
+\begin{equation}
+\mathbf{z}_{h,w}=\mathbf{W}_{s}\mathbf{x}_{h,w}.
+\label{eq:spectral_transform}
+\end{equation}
+
+$\mathbf{W}_{s}$ és una matriu apresa. A diferència d'una transformada fixa,
+pot adaptar-se a l'estadística del conjunt d'entrenament. Computacionalment,
+l'operació és independent entre posicions espacials: cada píxel pot processar-se
+separadament, mantenint l'ordre intern de suma sobre bandes. Aquesta propietat
+és rellevant quan es paral·lelitza el C sense alterar el resultat numèric.
+
+\subsection{Convolucions i cost principal}
+
+Les convolucions redueixen progressivament la resolució espacial i concentren
+informació en canals latents. Una convolució amb kernel $K\times K$ pot
+escriure's com:
+
+\begin{equation}
+y_{c_o,h,w}=b_{c_o}+
+\sum_{c_i}\sum_{u=0}^{K-1}\sum_{v=0}^{K-1}
+W_{c_o,c_i,u,v}\,x_{c_i,h+u,w+v}.
+\label{eq:conv2d}
+\end{equation}
+
+La fórmula mostra per què és una operació costosa. Per cada mostra de sortida
+cal recórrer canals d'entrada i posicions del kernel. En SORTENY, els kernels
+espacials són de $5\times5$ i el nombre de canals intermedis és elevat. Per
+això, el temps total del còdec està dominat per aquestes operacions i no pel
+càlcul de regles semàntiques senzilles com un índex espectral.
+
+\subsection{GDN i IGDN}
+
+Entre convolucions s'utilitza \emph{Generalized Divisive Normalization} (GDN),
+una normalització no lineal habitual en compressió neuronal
+\cite{balle2017end}. Per una posició espacial fixa:
+
+\begin{equation}
+y_i=\frac{x_i}
+{\sqrt{\beta_i+\sum_j\gamma_{ij}x_j^2}}.
+\label{eq:gdn}
+\end{equation}
+
+El canal $i$ no depèn només d'ell mateix, sinó també de la suma ponderada dels
+altres canals $j$. La IGDN aplica la transformació complementària al decoder.
+A diferència d'una activació simple com ReLU, la GDN no només talla o escala
+valors de manera independent: normalitza cada resposta segons l'energia dels
+altres canals. En compressió neuronal això és útil perquè tendeix a reduir
+dependències estadístiques entre coeficients latents, un efecte sovint descrit
+com una aproximació a ``gaussianitzar'' o fer més regular la distribució dels
+coeficients. Uns latents menys dependents són més adequats per al model de
+probabilitat i per al codificador per entropia posterior.
+
+Aquest guany de modelatge té un cost computacional: cal calcular sumes entre
+canals per moltes posicions espacials. Aquesta és una de les raons per les quals
+l'optimització C ha de respectar l'ordre de les operacions i validar paritat
+numèrica.
+
+\subsection{Modulador de qualitat}
+
+SORTENY és multiràtio perquè incorpora una subxarxa de modulació condicionada
+pel paràmetre $\lambda$ \cite{mijares2023reduced,mijares2025sorteny}. El
+modulador genera factors que escalen els latents abans de quantitzar-los i que
+el decoder necessita per invertir l'operació de manera coherent.
+
+És important no confondre $M(\lambda)$ amb una màscara ROI. $M(\lambda)$ és un
+tensor de factors de modulació après, amb la mateixa funció conceptual per a
+tota la imatge o per cada posició latent. Una màscara ROI, en canvi, és una
+decisió externa sobre quines zones es volen prioritzar. El Q-map que es defineix
+més endavant tradueix aquesta decisió externa a valors de $\lambda$ quantitzats,
+però el modulador continua sent el mecanisme intern de la xarxa.
+
+\section{Geometria interna i granularitat del Q-map}
+\label{sec:tensor_geometry}
+
+La geometria dels tensors explica dues propietats centrals: el cost de memòria
+i la mida de la graella de control de qualitat. La transformada espectral opera
+a resolució completa. Després, cada component passa per quatre convolucions de
+stride 2. Cada stride 2 redueix l'alçada i l'amplada a la meitat:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{ch3/tensor_geometry_funnel.pdf}
+\caption{Reducció espacial de SORTENY fins a la graella latent. La figura
+mostra dimensions conceptuals; la implementació reutilitza buffers i no conserva
+tots els tensors simultàniament.}
+\label{fig:tensor_geometry_funnel}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrl}
+\toprule
+Etapa & Canals & Alçada & Amplada & Valors & Operació posterior \\
+\midrule
+Entrada per banda & 1 & 512 & 512 & 262.144 & Conv. 0 \\
+Anàlisi 0 & 128 & 256 & 256 & 8.388.608 & GDN \\
+Anàlisi 1 & 128 & 128 & 128 & 2.097.152 & GDN \\
+Anàlisi 2 & 128 & 64 & 64 & 524.288 & GDN \\
+Latent per component & 384 & 32 & 32 & 393.216 & Modulació i Q \\
+Latent complet & $8\cdot384$ & 32 & 32 & 3.145.728 & Codificació \\
+\bottomrule
+\end{tabular}
+\caption{Dimensions principals derivades dels pesos i de la implementació C.
+La columna \emph{Valors} indica el nombre d'elements del tensor, no la memòria
+total reservada durant tota la inferència.}
+\label{tab:tensor_geometry}
+\end{table}
+
+El màxim tensor intermedi d'una banda conté més de vuit milions de
+\code{float32}, uns 32~MiB. Conservar còpies independents per capa o per fil
+superaria ràpidament la memòria disponible en una plataforma de baix recurs.
+Aquesta geometria justifica la reutilització de buffers que s'explica al
+Capítol~\ref{ch:pipeline}.
+
+\subsection{\texorpdfstring{De $512\times512$ a $32\times32$}{De 512x512 a 32x32}}
+
+Quatre reduccions per factor 2 donen un factor total $2^4=16$. Per tant:
+
+\begin{equation}
+\frac{512}{16}=32.
+\label{eq:qmap_grid_size}
+\end{equation}
+
+El control espacial de qualitat opera sobre aquesta graella latent de
+$32\times32$ posicions. De manera pràctica, es parla d'un valor Q per bloc
+$16\times16$ de la imatge d'entrada. Aquesta frase descriu la graella de
+control, però no vol dir que cada bloc sigui independent visualment.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{ch3/qmap_grid.pdf}
+\caption{Correspondència entre la imatge d'entrada i el Q-map. Cada valor Q
+controla una cel·la latent associada a un pas de 16 píxels a l'entrada.}
+\label{fig:qmap_grid}
+\end{figure}
+
+\subsection{Camp receptiu i efecte sobre ROIs petites}
+
+Una cel·la latent no depèn només dels $16\times16$ píxels que li corresponen
+per pas espacial. Les convolucions amb kernel $5\times5$ fan que cada sortida
+vegi un veïnat de l'entrada. Si $r_\ell$ és la mida del camp receptiu després
+de la capa $\ell$ i $j_\ell$ és el salt equivalent entre posicions d'aquella
+capa respecte l'entrada:
+
+\begin{equation}
+r_0=1,\qquad j_0=1,
+\end{equation}
+
+\begin{equation}
+r_{\ell+1}=r_\ell+(5-1)j_\ell,\qquad
+j_{\ell+1}=2j_\ell.
+\label{eq:receptive_field}
+\end{equation}
+
+Això dona:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Després de la capa & 0 & 1 & 2 & 3 & 4 \\
+\midrule
+Salt equivalent $j$ & 1 & 2 & 4 & 8 & 16 \\
+Camp receptiu $r$ & 1 & 5 & 13 & 29 & 61 \\
+\bottomrule
+\end{tabular}
+\caption{Creixement del camp receptiu amb quatre convolucions $5\times5$ i
+stride 2.}
+\label{tab:receptive_field}
+\end{table}
+
+La conseqüència és important per a la qualitat espacial: una ROI petita o molt
+dispersa pot quedar afectada pels blocs veïns. Encara que la cel·la latent
+marcada com a ROI rebi una qualitat alta, part de la informació que contribueix
+a reconstruir-la pot haver passat per cel·les properes amb una qualitat diferent.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{ch3/receptive_field_overlap.pdf}
+\caption{Diferència entre graella de control i camp d'influència. El bloc de
+control és de 16 píxels, però el camp receptiu teòric arriba aproximadament a
+61 píxels.}
+\label{fig:receptive_field_overlap}
+\end{figure}
+
+\section{Taxa, distorsió i qualitat}\label{sec:metriques_teoria}
+
+\subsection{MSE, MAE i PSNR}
+
+Per a $N=BHW$ mostres, l'error quadràtic mitjà és:
+
+\begin{equation}
+\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}})
+=\frac{1}{N}\sum_{i=1}^{N}(x_i-\hat{x}_i)^2.
+\label{eq:mse}
+\end{equation}
+
+L'error absolut mitjà és:
+
+\begin{equation}
+\mathrm{MAE}(\mathbf{x},\hat{\mathbf{x}})
+=\frac{1}{N}\sum_{i=1}^{N}|x_i-\hat{x}_i|.
+\label{eq:mae}
+\end{equation}
+
+Per dades de 16 bits, el PSNR es calcula amb el mateix màxim dinàmic que a
+l'Equació~\ref{eq:input_tensor}:
+
+\begin{equation}
+\mathrm{PSNR}=10\log_{10}
+\left(\frac{65535^2}{\mathrm{MSE}}\right)\;\mathrm{dB}.
+\label{eq:psnr}
+\end{equation}
+
+Un PSNR més alt implica menys MSE. La diferència en dB és logarítmica; no es
+pot interpretar linealment com un percentatge de píxels correctes. El PSNR és
+especialment adequat en aquest treball perquè el model fixed-quality que
+s'utilitza com a base científica està formulat en termes de MSE
+\cite{mijares2024fixed}. Altres mètriques, com SSIM, modelen estructura visual
+\cite{wang2004ssim}, però no són la variable que calibra el mètode.
+
+\subsection{Bitrate i fitxer \code{.tfci}}
+
+El bitrate es mesura en bits per mostra espectral:
+
+\begin{equation}
+R=\frac{8S}{BHW}\;\bps,
+\label{eq:bps_general}
+\end{equation}
+
+on $S$ és la mida codificada en bytes. Quan el fitxer és el resultat del
+pipeline de TensorFlow Compression, s'utilitza l'extensió \code{.tfci}. Aquest
+fitxer conté latents codificats i la informació lateral que el decoder de la
+referència necessita per reconstruir la imatge. Per això és la mesura que
+s'utilitza com a bitrate real en les validacions CSMR.
+
+\begin{equation}
+R_{\mathrm{tfci}}=
+\frac{8S_{\mathrm{tfci}}}{BHW}\;\bps.
+\label{eq:bps}
+\end{equation}
+
+El bitstream C d'aquesta memòria té una funció diferent: empaqueta capçalera,
+Q-map i latents per validar la ruta C, però encara no incorpora el mateix
+codificador per entropia o codificador aritmètic que la referència. Per aquest
+motiu, la mida C directa no s'interpreta com a bitrate final de compressió.
+
+Si un mètode A té bitrate $R_A$ i el baseline B té $R_B$, l'estalvi relatiu és:
+
+\begin{equation}
+\mathrm{estalvi}_{A/B}
+=100\left(1-\frac{R_A}{R_B}\right)\%.
+\label{eq:saving}
+\end{equation}
+
+Un estalvi del 10\% significa que A envia el 90\% dels bits de B. No equival a
+dir que la compressió s'ha duplicat.
+
+\subsection{Entropia i proxies}
+
+L'entropia empírica d'un alfabet latent és:
+
+\begin{equation}
+H=-\sum_k p_k\log_2 p_k.
+\label{eq:entropy}
+\end{equation}
+
+Una entropia menor suggereix que els símbols podrien codificar-se amb menys
+bits, però no especifica el resultat d'un codificador concret
+\cite{cover2006information}. També es pot aplicar una compressió generalista
+com zlib per obtenir un indici ràpid de compresibilitat. En aquesta memòria,
+entropia i zlib són proxies de selecció: ajuden a decidir quins casos mereixen
+una validació completa, però no substitueixen el bitrate \code{.tfci}.
+
+\section{Qualitat espacial, ROI i fons}\label{sec:roi_metrics}
+
+Una regió d'interès, o ROI, és el conjunt de blocs que es vol protegir amb més
+qualitat. En aquest capítol la definició és deliberadament genèrica: la màscara
+pot venir d'un operador manual, d'un criteri espectral o d'un altre mecanisme.
+Els capítols següents definiran els mecanismes concrets utilitzats.
+
+Sigui $m_{u,v}\in\{0,1\}$ la màscara sobre la graella latent
+$32\times32$. Els blocs amb $m=1$ formen la ROI i els blocs amb $m=0$ formen el
+fons. Per mesurar PSNR sobre la imatge d'entrada, aquesta màscara de blocs
+s'expandeix a les mostres espacials corresponents.
+
+Per una reconstrucció A i un baseline B, sempre amb la mateixa màscara:
+
+\begin{align}
+\Delta\mathrm{PSNR}_{\mathrm{ROI}}
+&=\mathrm{PSNR}_{\mathrm{ROI}}(A)
+-\mathrm{PSNR}_{\mathrm{ROI}}(B),\\
+\Delta\mathrm{PSNR}_{\mathrm{fons}}
+&=\mathrm{PSNR}_{\mathrm{fons}}(A)
+-\mathrm{PSNR}_{\mathrm{fons}}(B).
+\label{eq:roi_bg_deltas}
+\end{align}
+
+Usar la mateixa màscara és essencial. Si el baseline i el mètode avaluat es
+mesuressin sobre regions diferents, els deltes no compararien la mateixa
+població de mostres. Una política espacial útil ha de conservar o millorar la
+ROI respecte del baseline escollit, mentre pot degradar el fons de manera
+controlada si això redueix el bitrate.
+
+La cobertura de la ROI és:
+
+\begin{equation}
+C_{\mathrm{ROI}}=
+\frac{\sum_{u,v}m_{u,v}}{32\cdot32}\cdot100\%.
+\label{eq:roi_coverage}
+\end{equation}
+
+Els extrems són poc informatius. Si $C_{\mathrm{ROI}}=0$, no hi ha cap regió
+protegida. Si $C_{\mathrm{ROI}}=100\%$, tota la imatge és ROI i no queda fons
+d'on obtenir estalvi. Entre aquests extrems, la mida i la forma de la ROI
+condicionen la utilitat del control espacial.
+
+\section{Model fixed-quality}\label{sec:model_fq}
+
+El mètode fixed-quality de Mijares i Verdú \etal\ parteix d'una pregunta
+inversa: en lloc de provar diferents qualitats fins trobar-ne una adequada,
+estima quin $\lambda$ cal utilitzar per assolir un error objectiu
+\cite{mijares2024fixed}.
+
+\subsection{De PSNR objectiu a MSE objectiu}
+
+Si l'usuari defineix una qualitat objectiu en PSNR, primer cal convertir-la a
+MSE. Reordenant l'Equació~\ref{eq:psnr}:
+
+\begin{equation}
+\widehat{\mathrm{MSE}}=
+\frac{65535^2}
+{10^{\mathrm{PSNR}_{\mathrm{obj}}/10}}.
+\label{eq:target_mse}
+\end{equation}
+
+El símbol $\widehat{\mathrm{MSE}}$ indica l'error que es voldria obtenir. Aquest
+valor no determina directament el byte d'un Q-map. Abans cal tenir en compte
+l'error base de la imatge o del bloc.
+
+\subsection{MSE base i modulador mitjà}
+
+El paper defineix $\mathrm{MSE}_0(\mathbf{x})$ com l'error base o mínim associat
+a la imatge $\mathbf{x}$ en el model considerat. Aquest valor depèn del
+contingut: dues imatges comprimides amb el mateix $\lambda$ poden donar PSNR
+diferents perquè no tenen la mateixa dificultat de reconstrucció.
+
+La magnitud mitjana del modulador es modela com una funció lineal:
+
+\begin{equation}
+\bar{M}(\lambda)=a\lambda+b.
+\label{eq:mod_linear}
+\end{equation}
+
+El paper observa que l'error de reconstrucció creix de manera aproximadament
+quadràtica amb l'invers d'aquest modulador mitjà. La relació s'escriu com:
+
+\begin{equation}
+\widehat{\mathrm{MSE}}
+=\mathrm{MSE}_0+
+\alpha\,\mathrm{MSE}_0
+\left(\frac{1}{2\bar{M}(\lambda)}\right)^2.
+\label{eq:mse_model}
+\end{equation}
+
+Dividint per $\mathrm{MSE}_0$, es veu millor la idea de l'error relatiu:
+
+\begin{equation}
+\frac{\widehat{\mathrm{MSE}}}{\mathrm{MSE}_0}
+=1+
+\alpha
+\left(\frac{1}{2\bar{M}(\lambda)}\right)^2.
+\label{eq:mse_relative_model}
+\end{equation}
+
+Aquesta expressió és una aproximació estadística calibrada. No diu que tots els
+píxels tinguin el mateix error, sinó que permet estimar quin $\lambda$ produeix
+un error mitjà esperat.
+
+\subsection{Estimació de \texorpdfstring{$\lambda$}{lambda}}
+
+Combinant les Equacions~\ref{eq:mod_linear} i~\ref{eq:mse_model}, el paper
+despeja el valor de $\lambda$ necessari:
+
+\begin{equation}
+\hat{\lambda}
+=\frac{1}{a}
+\left(
+\sqrt{
+\frac{\alpha\,\mathrm{MSE}_0(\mathbf{x})}
+{4\left(\widehat{\mathrm{MSE}}-\mathrm{MSE}_0(\mathbf{x})\right)}
+}
+-b
+\right).
+\label{eq:lambda_from_mse}
+\end{equation}
+
+La cadena completa és, per tant:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{ch3/fixed_quality_chain.pdf}
+\caption{Cadena conceptual del model fixed-quality: d'una qualitat objectiu es
+dedueix un MSE objectiu, després un $\lambda$ estimat i finalment una
+representació quantitzada per transmetre al decoder.}
+\label{fig:fixed_quality_chain}
+\end{figure}
+
+L'Equació~\ref{eq:lambda_from_mse} només té sentit si el target és assolible:
+el denominador ha de ser positiu i el resultat ha de quedar dins el rang de
+$\lambda$ per al qual el model i la calibració són vàlids. Quan no passa, el
+sistema ha de saturar al límit disponible o marcar el cas com no assolible.
+
+\subsection{Quantització de \texorpdfstring{$\lambda$}{lambda} a Q}
+
+Un array de $\lambda$ en coma flotant seria informació lateral costosa. El paper
+quantitza cada $\lambda$ a un enter de 8 bits:
+
+\begin{equation}
+Q=
+\operatorname{round}\left[
+255\frac{\lambda-\lambda_{\min}}
+{\lambda_{\max}-\lambda_{\min}}
+\right],
+\qquad Q\in\{0,\ldots,255\}.
+\label{eq:lambda_to_q}
+\end{equation}
+
+El decoder pot recuperar el valor aproximat amb:
+
+\begin{equation}
+\hat{\lambda}=
+\lambda_{\min}+
+\frac{Q}{255}
+(\lambda_{\max}-\lambda_{\min}).
+\label{eq:q_to_lambda}
+\end{equation}
+
+Per tant, el byte Q no és una quantització clàssica directa dels píxels. És una
+quantització lineal del paràmetre $\lambda$, que després actua a través del
+modulador de la xarxa. En aquesta arquitectura, valors Q més alts corresponen a
+valors $\lambda$ més alts i, en general, a més qualitat i més taxa.
+
+\subsection{Cost de la informació lateral}
+
+Quan la qualitat varia espacialment, el decoder ha de conèixer quina qualitat
+s'ha aplicat a cada posició latent. Aquesta informació no forma part de la
+imatge reconstruïda, però és necessària per poder descodificar-la correctament;
+per això s'anomena \emph{informació lateral}. En la ruta C d'aquesta memòria,
+aquesta informació lateral és el Q-map escrit explícitament al bitstream
+intermedi.
+
+Amb una graella $32\times32$, un Q-map conté 1.024 valors. Si cada valor és un
+byte, la informació lateral ocupa 1.024 bytes. Expressada en bits per píxel
+espacial, la mateixa convenció que utilitza el paper fixed-quality per comparar
+arrays de $\lambda$, aquesta mida és:
+
+\begin{equation}
+R_{Q,\mathrm{espacial}}=
+\frac{8\cdot1024}{512\cdot512}
+=0.03125\;\text{bits/píxel}.
+\label{eq:qmap_side_spatial_bps}
+\end{equation}
+
+La resta de resultats d'aquesta memòria, però, es donen en bits per mostra
+espectral. Com que cada retall té vuit bandes, el mateix cost es reparteix sobre
+$8\cdot512\cdot512$ mostres:
+
+\begin{equation}
+R_Q=
+\frac{8\cdot1024}{8\cdot512\cdot512}
+=0.00390625\;\bps.
+\label{eq:qmap_side_bps}
+\end{equation}
+
+La diferència entre $0.03125$ i $0.00390625$ no és una contradicció; només
+canvia el denominador. La informació lateral és petita respecte del volum RAW,
+però és real i s'ha de transportar o reconstruir de manera equivalent al
+decoder.
+
+\section{Lectura dels capítols següents}\label{sec:criteris_lectura}
+
+Amb aquests fonaments es pot separar el problema en tres decisions. Primer,
+quin valor de qualitat es vol assignar. Segon, si aquest valor és global o pot
+variar sobre la graella $32\times32$. Tercer, quin criteri decideix quins blocs
+mereixen més o menys qualitat.
+
+Els capítols següents concreten aquestes decisions en una implementació C i en
+experiments. El Capítol~\ref{ch:pipeline} descriu el còdec i el bitstream. El
+Capítol~\ref{ch:control} defineix els modes de Q-map i els presets automàtics.
+El Capítol~\ref{ch:metodologia} explica com es mesuren resultats amb màscares
+comunes, C-only i CSMR. Finalment, els capítols de resultats indiquen quins
+compromisos taxa--distorsió s'obtenen i quin cost tenen en una plataforma de
+baix recurs.

@@ -1,0 +1,10 @@
+preset	threshold	tier	description
+cloud_avoid	0.50	operational	Protect clear-sky blocks and degrade likely clouds.
+local_contrast	0.035	operational	Protect locally textured visible blocks.
+high_ndvi	0.50	operational	CSMR-confirmed dense-vegetation mode; 3/3 useful mid-ROI cases.
+vegetation	0.40	reference	Stable NDVI reference preset from full lambda005 validation.
+vegetation_green	0.50	reference	Stable GNDVI reference preset from full lambda005 validation.
+chlorophyll	0.10	reference	Stable NDCI reference preset from full lambda005 validation.
+low_ndvi	0.15	experimental	NDVI-low candidate for urban/soil-like regions.
+dark_regions	0.26	experimental	Adjusted visible-darkness candidate; ROI can be broad.
+water_body	0.10	experimental	Adjusted water candidate; current dataset has limited evidence.

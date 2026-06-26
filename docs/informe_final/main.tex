@@ -1,0 +1,210 @@
+%\documentclass[catalan,a4paper,11pt,openright,final]{book}
+%\documentclass[catalan,a4paper,11pt,oneside,final]{book}
+\documentclass[catalan,a4paper,11pt,twoside,openright,final]{book}
+\usepackage[main=catalan,english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{chngcntr}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{url}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+%%\usepackage{subeqnarray}
+
+\sloppy    %% Alinea el texte reduint el nombre de paraules trencades amb guions
+%\pagestyle{headings}
+%\parskip 10pt
+\setlength{\parskip}{1.5ex}
+\setlength{\topmargin}{-0.75cm}
+\setlength{\oddsidemargin}{0.5cm}
+%\setlength{\evensidemargin}{0.5cm}
+\setlength{\evensidemargin}{-0.58cm} %
+\setlength{\textwidth}{16cm} \setlength{\textheight}{23cm}
+\renewcommand{\baselinestretch}{1.25} \small\normalsize
+
+\renewcommand{\qedsymbol}{$\blacksquare$}
+% STANDARD NEW COMMAND DEFINITIONS
+\newtheorem{lemma}{\textbf{Lemma}}
+\renewcommand{\v}[1]{\mathbf{#1}}
+\newcommand{\eq}[1]{\begin{equation}{#1}\end{equation}}
+\newcommand{\p}[1]{\left(#1\right)}
+\newcommand{\corch}[1]{\left[#1\right]}
+\newcommand{\llav}[1]{\left\{#1\right\}}
+% CURRENT PAPER SPECIFIC NEW COMMAND DEFINITIONS
+\DeclareMathSymbol{\Re}{\mathbin}{AMSb}{"52}
+\DeclareMathSymbol{\Ce}{\mathbin}{AMSb}{"43}
+\DeclareMathSymbol{\F}{\mathbin}{AMSb}{"46}
+\DeclareMathSymbol{\G}{\mathbin}{AMSb}{"47}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\unit}[1]{\,\mathrm{#1}}
+\newcommand{\bps}{\mathrm{bit}\,\mathrm{px}^{-1}\,\mathrm{band}^{-1}}
+\newcommand{\dataset}[1]{\textit{#1}}
+\newcommand{\sourcepath}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\figsource}[1]{\par\smallskip{\footnotesize\textit{Font:} #1}}
+\newcommand{\etal}{\textit{et al.}}
+\graphicspath{{figures/}}
+\counterwithout{figure}{chapter}
+\counterwithout{table}{chapter}
+
+
+\setlength{\unitlength}{1mm}
+
+\pagestyle{fancy} %xx
+\setlength{\headheight}{14pt}
+\fancyhead[LE,RO]{\thepage} %
+\fancyhead[RE]{\nouppercase \leftmark} %
+\fancyhead[LO]{\nouppercase \rightmark} %
+\fancyhead[CF]{} %
+%\renewcommand{\headrulewidth}{0.4pt}
+
+%\include{macros}
+\begin{document}
+\selectlanguage{catalan}
+%
+% =================================================================
+% Front matter
+% =================================================================
+%
+\hypersetup{pageanchor=false}
+\include{frontpage}
+\thispagestyle{empty} %
+\cleardoublepage %
+\pagenumbering{roman}
+\hypersetup{pageanchor=true}
+
+\include{abstract}
+\thispagestyle{empty}
+\cleardoublepage
+
+\include{resum}
+\thispagestyle{empty}
+\cleardoublepage
+
+
+\renewcommand{\baselinestretch}{1.25}
+\fancyhead[RE]{\slshape \textsf{Índex}}
+\fancyhead[LO]{\slshape \textsf{Índex}}
+\tableofcontents
+\cleardoublepage
+\thispagestyle{empty}
+
+\fancyhead[RE]{\slshape \textsf{Llista de figures}}
+\fancyhead[LO]{\slshape \textsf{Llista de figures}}
+\listoffigures
+\addcontentsline{toc}{chapter}{Llista de figures}
+\cleardoublepage
+\thispagestyle{empty}
+
+\listoftables
+\addcontentsline{toc}{chapter}{Llista de taules}
+\fancyhead[RE]{\slshape \textsf{Llista de taules}}
+\fancyhead[LO]{\slshape \textsf{Llista de taules}}
+\thispagestyle{empty}
+\cleardoublepage
+
+\include{acronyms}
+\thispagestyle{empty}
+\cleardoublepage
+
+\setlength{\parskip}{1.5ex}
+
+%
+% =================================================================
+% Contents
+% =================================================================
+%
+\setcounter{chapter}{0} \pagenumbering{arabic}
+\setcounter{figure}{0}
+\setcounter{table}{0}
+\newcounter{one_two_three}
+\newcounter{appcnt}[chapter]
+\newcounter{pastchapter}[chapter]
+\newcounter{pastchapter2}[chapter]
+
+\setcounter{tocdepth}{2}     % -1 = Part         0 = Chapter    1 = Section       2 = Subsection
+\setcounter{secnumdepth}{3}  % 3 = Subsubsection 4 = Paragraph  5 = Subparagraph
+
+\setlength{\parskip}{1.5ex}
+\renewcommand{\arraystretch}{1.25}
+
+
+\cleardoublepage
+\include{Chapter1/text_ch1}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter2/text_ch2}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter3/text_ch3}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter4/text_ch4}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter5/text_ch5}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter6/text_ch6}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter7/text_ch7}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter8/text_ch8}
+\thispagestyle{empty}
+
+\cleardoublepage
+\include{Chapter9/text_ch9}
+\thispagestyle{empty}
+
+\appendix
+\cleardoublepage
+\include{AppendixA/text_app_a}
+\cleardoublepage
+\include{AppendixB/text_app_b}
+\cleardoublepage
+\include{AppendixC/text_app_c}
+\cleardoublepage
+\include{AppendixD/text_app_d}
+
+
+%
+% =================================================================
+% back matter
+% =================================================================
+%
+\cleardoublepage %
+\pagenumbering{Roman}
+\addcontentsline{toc}{chapter}{Bibliografia}
+\setlength{\parskip}{0.2ex}
+\renewcommand{\baselinestretch}{0.991} \small\normalsize
+%
+\fancyhead[RE]{\slshape \textsf{Bibliografia}}
+\fancyhead[LO]{\slshape \textsf{Bibliografia}}
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+\end{document}

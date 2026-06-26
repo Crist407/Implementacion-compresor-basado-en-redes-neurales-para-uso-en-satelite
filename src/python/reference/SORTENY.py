@@ -66,17 +66,17 @@ def read_raw(filename,height,width,bands,endianess, D):
 
   This function is independent from the patchsize chosen for training.
   """
-  if D == '1':
+  if D == '1' or D == tf.uint8:
       datatype = tf.uint8
-  elif D == '2':
+  elif D == '2' or D == tf.uint16:
       datatype = tf.uint16
-  elif D == '3':
+  elif D == '3' or D == tf.int16:
       datatype = tf.int16
-  elif D == '4':
+  elif D == '4' or D == tf.int32:
       datatype = tf.int32
-  elif D == '5':
+  elif D == '5' or D == tf.int64:
       datatype = tf.int64
-  elif D == '6':
+  elif D == '6' or D == tf.float32:
       datatype = tf.float32
   else:
       datatype = tf.float64

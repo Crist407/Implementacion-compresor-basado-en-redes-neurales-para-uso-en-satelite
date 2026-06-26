@@ -1,0 +1,366 @@
+% !TEX root = ../main.tex
+\chapter{Reproduïbilitat i comandes}\label{app:reproducibility}
+\fancyhead[RE]{\slshape \textsf{Apèndix \thechapter.\ Reproduïbilitat}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+Aquest apèndix recull els passos pràctics per reproduir els exemples públics
+del projecte. La ruta bàsica només requereix el repositori, la mostra RAW,
+la calibració inclosa a \code{config/} i els binaris C compilats localment.
+
+\section{Reproducció ràpida}
+
+La prova mínima compila el codi C, executa un test intern i processa una imatge
+amb la ruta mesurada \(\lambda/Q\):
+
+\begin{verbatim}
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+make MODE=release OMP=1
+make MODE=release OMP=1 test_ops
+
+python3 src/python/analysis/run_lambda005_measured_quality_route.py \
+  --output-dir output/checkpoints/quickstart_measured_route \
+  --modes focus_bgq128_measured \
+  --threads 4
+\end{verbatim}
+
+Una execució correcta crea el directori
+\code{output/checkpoints/quickstart\_measured\_route} contindrà:
+
+\begin{itemize}[leftmargin=*]
+  \item un Q-map final de 1.024 bytes;
+  \item un bitstream C llegible pel descompressor;
+  \item una reconstrucció RAW de 4.194.304 bytes;
+  \item \code{metrics.csv}, \code{metrics.json} i \code{run\_meta.json}.
+\end{itemize}
+
+Aquesta prova valida el camí essencial: entrada RAW, còdec C, error base,
+càlcul de qualitat local, Q-map i reconstrucció final. Les campanyes completes
+del document requereixen dependències i artefactes addicionals i es descriuen
+com a reproducció avançada.
+
+\section{Repositori públic}
+
+El repositori públic del projecte és:
+
+\begin{center}
+\url{https://github.com/Crist407/Implementacio-compressor-basat-en-xarxes-neurals-per-a-us-en-satel-lit}
+\end{center}
+
+La versió pública ha d'indicar el commit o tag utilitzat per generar la memòria.
+Els checkpoints complets, els bundles Raspberry i els entorns locals no formen
+part del repositori; la política de publicació queda resumida al fitxer
+\code{PUBLIC\_ARTIFACTS.md}.
+
+\section{Estructura pública del repositori}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Directori & Contingut publicable \\
+\midrule
+\code{src/c/} & Implementació C del compressor, descompressor, capes i
+generadors de Q-map. \\
+\code{src/python/analysis/} & Orquestradors i scripts d'anàlisi, inclosa la
+ruta mesurada \code{lambda/Q}. \\
+\code{src/python/reference/} & Referència Python/TensorFlow de SORTENY. \\
+\code{scripts/raspberry/} & Benchmarks autocontinguts per Raspberry. \\
+\code{scripts/docs/} & Regeneració de figures i compilació compatible de la
+memòria. \\
+\code{config/} & Llindars, calibració mínima \code{lambda005} i configuracions
+de presets. \\
+\code{weights/} & Pesos exportats del model necessaris per a la ruta C. \\
+\code{data/} & Dataset RAW de 120 retalls, mostra mínima i instruccions de
+visualització. \\
+\code{docs/informe\_final/} & Fonts \LaTeX, figures i bibliografia de la
+memòria. \\
+\bottomrule
+\end{tabularx}
+\caption{Estructura prevista del repositori públic. Els checkpoints complets
+queden fora de Git i es regeneren amb els scripts indicats.}
+\label{tab:public_repo_structure}
+\end{table}
+
+\section{Instal·lació mínima}
+
+Per a la ruta C i la ruta mesurada calen compilador C, \code{make}, Python 3 i
+NumPy. La referència CSMR requereix dependències addicionals de TensorFlow i
+TensorFlow Compression; per això queda separada de la prova mínima.
+
+\begin{verbatim}
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+\end{verbatim}
+
+El repositori inclou una mostra RAW, el dataset de 120 retalls i una calibració
+mínima:
+
+\begin{verbatim}
+data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw
+data/Sentinel2A_crop_test/
+config/fq_calibration_lambda005.tsv
+\end{verbatim}
+
+Cada RAW té $8\times512\times512$ valors \code{uint16}, és a dir,
+4.194.304 bytes. La calibració permet executar la prova mínima sense recuperar
+els checkpoints complets.
+
+\section{Visualització dels RAW}
+
+Els fitxers RAW no tenen capçalera d'imatge i contenen vuit bandes BSQ. Per
+obrir-los amb Fiji/ImageJ cal utilitzar \code{File -> Import -> Raw...} i
+configurar:
+
+\begin{itemize}[leftmargin=*]
+  \item tipus d'imatge: \code{16-bit Unsigned};
+  \item amplada i alçada: $512\times512$;
+  \item nombre d'imatges: 8;
+  \item offset i separació entre imatges: 0;
+  \item ordre de bytes: little-endian.
+\end{itemize}
+
+Per inspecció visual en color natural aproximat, les bandes recomanades són
+B04 com a vermell, B03 com a verd i B02 com a blau. El fitxer
+\code{data/README.md} resumeix el format i els passos de visualització.
+
+També es pot generar un paquet de quicklook sense executar el còdec:
+
+\begin{verbatim}
+python3 src/python/utils/manual_roi_quicklook.py \
+  --input data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw \
+  --output-dir output/checkpoints/quicklook_example \
+  --pattern empty \
+  --skip-qmap
+\end{verbatim}
+
+\section{Compilació C}
+
+La compilació de la ruta C principal és:
+
+\begin{verbatim}
+make MODE=release OMP=1
+make MODE=release OMP=1 test_ops
+\end{verbatim}
+
+Els binaris utilitzats per les proves d'aquest apèndix són:
+\code{sorteny\_compressor}, \code{sorteny\_decompressor},
+\code{sorteny\_fq\_qmap} i \code{sorteny\_semantic\_qmap}. El test
+\code{test\_ops} comprova operadors interns del decoder abans d'executar una
+campanya completa.
+
+\section{Ruta mesurada \texorpdfstring{$\lambda/Q$}{lambda/Q}}
+
+La ruta mesurada implementa la cadena:
+
+\begin{center}
+\fbox{\begin{minipage}{0.92\textwidth}
+\centering
+compressió/descompressió base $\rightarrow$ error base $\rightarrow$
+fórmules fixed-quality $\rightarrow$ $\lambda/Q$ $\rightarrow$ Q-map
+$\rightarrow$ compressió final $\rightarrow$ mètriques
+\end{minipage}}
+\end{center}
+
+El smoke verificat utilitza una imatge i dos modes:
+
+\begin{verbatim}
+OUT_BASE=output/checkpoints
+OUT=$OUT_BASE/20260702_lambda005_measured_quality_route_smoke
+
+python3 src/python/analysis/run_lambda005_measured_quality_route.py \
+  --output-dir "$OUT" \
+  --modes global_target_measured focus_bgq128_measured \
+  --threads 4
+\end{verbatim}
+
+La sortida esperada inclou:
+
+\begin{description}[leftmargin=3.2cm,style=nextline]
+  \item[\code{qmaps/}] Q-maps de 1.024 bytes.
+  \item[\code{summary\_tsv/}] resum per mode i blocs.
+  \item[\code{bitstreams/}] contenidors C generats pel compressor.
+  \item[\code{reconstructions/}] RAW reconstruïts de 4.194.304 bytes.
+  \item[\code{metrics.csv/json}] PSNR, MSE, Q mitjana, temps i hashes.
+  \item[\code{run\_meta.json}] arguments, entrada, calibració i versions
+  operatives.
+\end{description}
+
+Per executar tots els modes implementats per defecte:
+
+\begin{verbatim}
+OUT=output/checkpoints/lambda005_measured_quality_route_full
+
+python3 src/python/analysis/run_lambda005_measured_quality_route.py \
+  --output-dir "$OUT" --threads 4
+\end{verbatim}
+
+Els modes suportats són \code{global\_target\_measured},
+\code{adaptive\_s8\_measured}, \code{focus\_bgq128\_measured},
+\code{target\_focus\_bgq128\_measured},
+\code{preserve\_roi\_q240\_bgq128} i
+\code{preserve\_roi\_q255\_bgq128}.
+
+\section{Comprovacions de la ruta mesurada}
+
+Després del smoke es poden verificar les invariants principals amb:
+
+\begin{verbatim}
+OUT_BASE=output/checkpoints
+CHECKPOINT=$OUT_BASE/20260702_lambda005_measured_quality_route_smoke
+
+find "$CHECKPOINT/qmaps" -name '*.raw' -printf '%p %s\n'
+find "$CHECKPOINT/reconstructions" -name '*.raw' -printf '%p %s\n'
+sed -n '1,20p' "$CHECKPOINT/metrics.csv"
+sed -n '1,20p' "$CHECKPOINT/qmap_precalibrated_comparison.csv"
+\end{verbatim}
+
+En la prova executada per preparar aquest apèndix, tots els Q-maps tenien
+1.024 bytes, les reconstruccions tenien 4.194.304 bytes i els bitstreams finals
+eren llegibles pel descompressor C. La comparació
+\code{qmap\_precalibrated\_comparison.csv} registra la diferència entre la ruta
+amb error mesurat i la ruta auxiliar precalibrada quan aplica.
+
+\section{Ruta precalibrada}
+
+La ruta precalibrada utilitza informació obtinguda fora de la placa per generar
+Q-maps sense repetir la passada base de compressor/descompressor. És útil per
+proves ràpides, comparatives i escenaris en què la calibració sigui
+representativa.
+
+Q-map uniforme:
+
+\begin{verbatim}
+CAL=config/fq_calibration_lambda005.tsv
+
+./sorteny_fq_qmap \
+  --calibration "$CAL" \
+  --target-from-q 204 \
+  --output-qmap output/checkpoints/q204.raw
+\end{verbatim}
+
+Q-map semàntic amb preset i política:
+
+\begin{verbatim}
+CAL=config/fq_calibration_lambda005.tsv
+IN=data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw
+
+./sorteny_semantic_qmap \
+  --input "$IN" \
+  --bands 8 --height 512 --width 512 \
+  --band-layout sentinel2-8 --preset cloud_avoid --threshold 0.50 \
+  --semantic-policy focus --foreground-boost 16 --background-q 128 \
+  --calibration "$CAL" \
+  --output-qmap output/checkpoints/cloud_avoid_focus_bgq128.raw \
+  --summary-tsv output/checkpoints/cloud_avoid_focus_bgq128.tsv
+\end{verbatim}
+
+Els detalls de modes, presets i llindars es reserven per
+l'Apèndix~\ref{app:config}.
+
+\section{Reproducció avançada: CSMR i bitrate real}
+
+El bitrate real de SORTENY es mesura amb la ruta Python/TensorFlow Compression
+del model. Els auditors CSMR converteixen cada Q-map en un array de
+$\lambda=Q\cdot0,05/255$ i executen la referència amb \code{quality\_array}.
+Aquestes campanyes requereixen dependències Python addicionals i els
+checkpoints de selecció corresponents. Quan aquests artefactes estan disponibles,
+les campanyes principals es regeneren amb:
+
+\begin{verbatim}
+SEL=output/checkpoints/20260620_lambda005_full_csmr_case_selection
+OUT=output/checkpoints/20260623_lambda005_csmr_selected_cases_bitrate_final
+
+python3 src/python/analysis/audit_csmr_selected_cases_from_full.py \
+  --selection-checkpoint "$SEL" \
+  --lambda-max 0.05 --output-dir "$OUT"
+\end{verbatim}
+
+\begin{verbatim}
+THR=output/checkpoints/20260625_lambda005_threshold_optimization
+OUT=output/checkpoints/20260626_lambda005_csmr_experimental_threshold_modes
+
+python3 src/python/analysis/audit_csmr_experimental_threshold_modes.py \
+  --threshold-checkpoint "$THR" \
+  --lambda-max 0.05 --output-dir "$OUT"
+\end{verbatim}
+
+\begin{verbatim}
+OUT=output/checkpoints/20260627_lambda005_csmr_preserve_roi_policy
+
+python3 src/python/analysis/audit_csmr_preserve_roi_policy.py \
+  --lambda-max 0.05 --output-dir "$OUT"
+\end{verbatim}
+
+Aquestes proves són més costoses que la ruta C-only i depenen de l'entorn
+Python/TensorFlow. Per això el cos de la memòria separa clarament proxies C de
+bitrate real \code{.tfci}.
+
+\section{Reproducció avançada: Raspberry}
+
+Els benchmarks Raspberry requereixen una placa configurada i els bundles
+autocontinguts generats per al projecte. La prova del còdec optimitzat és:
+
+\begin{verbatim}
+nohup env INCLUDE_EXPERIMENTAL=1 THREADS_LIST="4" \
+  scripts/raspberry/run_lambda005_bundle_benchmark.sh \
+  > rpi_optimized_lambda005_t4.log 2>&1 &
+\end{verbatim}
+
+El cost de generar Q-maps sense executar el còdec s'aïlla amb:
+
+\begin{verbatim}
+nohup env INCLUDE_EXPERIMENTAL=1 REPEATS=3 \
+  scripts/raspberry/run_lambda005_qmap_cost_benchmark.sh \
+  > rpi_qmap_cost_lambda005.log 2>&1 &
+\end{verbatim}
+
+La integritat mínima d'un checkpoint Raspberry es comprova amb:
+
+\begin{verbatim}
+find "$CHECKPOINT" -name DONE | wc -l
+find "$CHECKPOINT" -name run_meta.tsv | wc -l
+find "$CHECKPOINT" -name '*.time.txt' | wc -l
+find "$CHECKPOINT" -name qmap.raw -size 1024c | wc -l
+tar -tzf "${CHECKPOINT}.tar.gz" >/dev/null
+sha256sum "${CHECKPOINT}.tar.gz"
+\end{verbatim}
+
+\section{Figures i compilació de la memòria}
+
+Les figures derivades del cos principal es regeneren amb:
+
+\begin{verbatim}
+python3 scripts/docs/build_final_report_figures.py
+\end{verbatim}
+
+La memòria es compila amb el flux compatible, sense modificar la plantilla
+institucional original:
+
+\begin{verbatim}
+scripts/docs/build_informe_final_compat.sh
+\end{verbatim}
+
+Una compilació correcta no ha de deixar cites, referències ni figures sense
+resoldre.
+
+\section{Checks finals}
+
+Abans de publicar o etiquetar una versió s'han d'executar, com a mínim:
+
+\begin{verbatim}
+SCRIPT=src/python/analysis/run_lambda005_measured_quality_route.py
+python3 -m py_compile "$SCRIPT"
+make MODE=release OMP=1
+make MODE=release OMP=1 test_ops
+git diff --check
+git status --short
+\end{verbatim}
+
+Les campanyes completes generen més artefactes que els inclosos a Git. La seva
+procedència, mida, hash i relació amb les taules del cos principal es
+documentaran a l'Apèndix~\ref{app:evidence}.

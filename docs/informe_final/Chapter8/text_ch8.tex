@@ -1,0 +1,504 @@
+% !TEX root = ../main.tex
+\chapter{Execució a bord i discussió}\label{ch:bord}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Execució a bord}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{Per què cal avaluar el processament a bord}\label{sec:onboard_motivation}
+
+La utilitat del control espacial de qualitat depèn de poder prendre la decisió
+abans de transmetre les dades. En una estació terrestre seria possible aplicar
+un segmentador més gran, revisar manualment la imatge o repetir la compressió.
+En canvi, a bord hi ha restriccions de còmput, memòria, energia i temps de
+contacte. Per aquest motiu, no és suficient demostrar que una màscara produeix
+menys bitrate: també cal mesurar el cost de generar-la i d'executar el còdec.
+
+L'arquitectura escollida separa dos costos:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{decisió espacial}: lectura del RAW, càlcul de l'índex o
+  descriptor del preset i escriptura del Q-map;
+  \item \textbf{transformació neuronal}: anàlisi espectral i espacial,
+  modulació, quantització i generació dels latents.
+\end{enumerate}
+
+Aquesta separació és rellevant des de la perspectiva de sistema. Si el primer
+cost fos comparable al segon, l'estalvi de bits podria no compensar el càlcul
+addicional. Si és molt menor, es poden oferir diversos presets sense alterar
+de manera apreciable la latència del còdec.
+
+\section{Plataforma i abast de la demostració}\label{sec:rpi_platform}
+
+La plataforma és una Raspberry Pi 3 Model B+ amb quatre nuclis ARM
+Cortex-A53 a 1,4~GHz i aproximadament 1~GiB de memòria. El sistema utilitza
+Linux de 64 bits i compila el codi amb GCC, \code{-O3}, OpenMP i opcions
+específiques per a Cortex-A53. Aquesta família de processadors és pertinent per
+estudiar codi de baix recurs i comparteix característiques amb ordinadors de
+bord basats en ARM, però la Raspberry no és maquinari qualificat per a vol.
+Aspectes com radiació, redundància, temps real, consum elèctric, interfícies del
+sensor i certificació queden fora de la demostració. La comparació correcta és,
+per tant, de \emph{representativitat computacional}, no d'equivalència de vol
+\cite{raspberry2018brief,schwaller2017a53,serra2024c3satp}.
+
+El bundle d'assaig és autocontingut: inclou codi C, pesos, calibració, sis
+retalls RAW, llindars i scripts. No instal·la TensorFlow, NumPy ni paquets del
+sistema. Cada execució desa \code{/usr/bin/time -v}, RSS màxim, temperatura,
+estat de throttling, arguments, hashes i mides. Aquesta decisió limita les
+diferències entre l'entorn local i la placa i permet reconstruir posteriorment
+les mètriques al PC.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+Element & Configuració mesurada \\
+\midrule
+CPU & 4 $\times$ ARM Cortex-A53, fins a 1,4~GHz \\
+Memòria & 909~MiB visibles pel sistema \\
+Entrada & 8 bandes, $512\times512$, \code{uint16}, 4.194.304 bytes \\
+Compilació & GCC \code{-O3 -fopenmp -mcpu=cortex-a53} \\
+Paral·lelisme final & 4 fils OpenMP \\
+Mostra & 6 retalls $\times$ 11 polítiques = 66 execucions \\
+Instrumentació & \code{/usr/bin/time -v}, \code{vcgencmd}, hashes i logs \\
+\bottomrule
+\end{tabular}
+\caption{Condicions principals del benchmark Raspberry optimitzat. La mostra
+correspon a sis retalls i onze polítiques amb quatre fils.}
+\label{tab:rpi_setup}
+\end{table}
+
+\section{Escalat inicial amb OpenMP}\label{sec:rpi_scaling}
+
+Abans de modificar els kernels es va executar la mateixa càrrega amb un, dos i
+quatre fils. Els valors de la Taula~\ref{tab:rpi_scaling} són mitjanes per una
+imatge i una política; no són el temps de tot el dataset. Cada entrada conté
+2.097.152 mostres espectrals.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{rrrrr}
+\toprule
+Fils & Compressió (s) & Descompressió (s) & Total (s) & Speedup total \\
+\midrule
+1 & 561,73 & 413,22 & 974,96 & 1,00$\times$ \\
+2 & 368,20 & 270,85 & 639,05 & 1,53$\times$ \\
+4 & 316,43 & 247,69 & 564,12 & 1,73$\times$ \\
+\bottomrule
+\end{tabular}
+\caption{Escalat inicial mitjà per retall i política. El speedup es calcula
+respecte d'un fil.}
+\label{tab:rpi_scaling}
+\end{table}
+
+Quatre fils redueixen el temps total un 42,1\% respecte d'un fil. L'escalat no
+és lineal: un speedup ideal seria $4\times$, però s'obté $1,73\times$. Hi
+contribueixen les regions serials, el cost de crear equips OpenMP, la pressió
+sobre memòria i l'amplada de banda compartida. Tot i això, quatre fils és la
+configuració operativa perquè és la més ràpida de les tres i no produeix
+errors ni falta de memòria.
+
+\subsection{Lectura amb la llei d'Amdahl}
+
+La llei d'Amdahl no és una hipòtesi del projecte, sinó una eina clàssica per
+interpretar per què un programa no accelera linealment quan s'afegeixen nuclis
+\cite{amdahl1967}. En aquest cas serveix per donar context al resultat OpenMP:
+si una part del temps no escala amb els fils, el speedup total queda limitat
+encara que algunes funcions internes sí siguin paral·leles. La forma utilitzada
+expressa el speedup amb $p$ fils com:
+
+\begin{equation}
+S(p)=\frac{1}{f+(1-f)/p},
+\end{equation}
+
+on $f$ és la fracció serial o, més precisament, la fracció aparent que no escala
+en aquesta mesura. Substituint $S(4)=974,96/564,12=1,728$, s'obté:
+
+\begin{equation}
+f\simeq
+\frac{1/S(4)-1/4}{1-1/4}=0,44.
+\end{equation}
+
+Aquest 44\% no és una mesura directa d'una funció serial del codi. Agrupa I/O,
+regions no paral·lelitzades, ample de banda de memòria, sincronització, cost
+d'OpenMP i possibles variacions de freqüència. La lectura útil és que afegir més
+fils al mateix codi no pot donar un speedup proper al nombre de nuclis. Cal
+reduir el treball de les capes o canviar la jerarquia de memòria.
+
+La millora incremental ataca part d'aquesta fracció en GDN/IGDN,
+depth-to-space i transformada espectral. Les convolucions continuen sent el
+volum principal d'operacions, però ja disposaven de paral·lelisme per canals.
+Una optimització posterior hauria de perfilar cache misses, vectorització i
+reutilització de kernel abans d'afegir directives OpenMP indiscriminadament.
+
+\section{Optimització incremental del C}\label{sec:c_optimization}
+
+L'optimització no es va fer canviant el model, els pesos o l'ordre aritmètic
+intern. Es van introduir tres canvis separats i es va executar una auditoria de
+paritat després de cadascun:
+
+\begin{description}[leftmargin=3.7cm,style=nextline]
+  \item[GDN i IGDN] Paral·lelisme sobre píxels, mantenint privat el denominador
+  de cada fil i l'ordre d'acumulació sobre canals.
+  \item[Depth-to-space] Paral·lelisme sobre canals de sortida. Aquesta operació
+  només reordena memòria i ha de ser exacta bit a bit.
+  \item[Transformada espectral] Paral·lelisme sobre píxels, mantenint l'ordre
+  intern de les bandes per no alterar l'aritmètica en coma flotant.
+\end{description}
+
+Abans dels canvis es va crear una golden baseline amb Q-map, bitstream,
+reconstrucció, hashes i temps. L'auditor compara Q-map byte a byte i
+reconstrucció RAW byte a byte. Si aparegués una diferència, també calcularia
+error màxim, MAE, MSE i PSNR. En les 66 parelles Raspberry de la comparació
+final no es va registrar cap fallada de paritat.
+
+\subsection{Temps abans i després}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Etapa & Baseline (s) & Optimitzat (s) & Reducció (s) & Speedup \\
+\midrule
+Compressió & 316,43 & 261,32 & 55,11 & 1,211$\times$ \\
+Descompressió & 247,69 & 206,80 & 40,89 & 1,198$\times$ \\
+Total & 564,12 & 468,13 & 96,00 & 1,205$\times$ \\
+\bottomrule
+\end{tabular}
+\caption{Temps mitjans per retall i política amb quatre fils. Les 66 parelles
+comparen les mateixes entrades i Q-maps.}
+\label{tab:rpi_optimized_time}
+\end{table}
+
+La millora total mitjana és $1,205\times$, equivalent a una reducció del
+17,0\% del temps. La Figura~\ref{fig:rpi_speedup} mostra que el resultat és
+estable entre polítiques: els speedups totals se situen aproximadament entre
+$1,20\times$ i $1,21\times$. Això és coherent amb el fet que les polítiques
+només canvien el Q-map; les capes convolucionals dominants són les mateixes.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{raspberry_speedup_by_mode.png}
+\caption{Speedup total de la versió C optimitzada per política, sempre amb
+quatre fils. La línia $1\times$ representa absència de millora.}
+\label{fig:rpi_speedup}
+\end{figure}
+
+El RSS màxim mitjà del compressor passa de 90.136~KiB a 89.505~KiB. Per tant,
+el paral·lelisme introduït no exigeix una còpia completa del tensor per fil i
+no augmenta la memòria de manera rellevant. Aquesta propietat és tan important
+com el speedup en una placa amb menys d'1~GiB disponible.
+
+\subsection{Paritat funcional}
+
+La comparació revisa Q mínima, màxima, mitjana i nombre de valors únics, PSNR
+global, PSNR ROI, PSNR de fons i proxy gzip. Es van emparellar 66 execucions i
+es van obtenir zero fallades. El resultat accepta H5: les optimitzacions
+redueixen temps sense canviar la decisió de qualitat ni la reconstrucció
+validada.
+
+La paritat amb la versió C anterior és el criteri d'acceptació estricte. La
+comparació amb la referència Python de SORTENY continua essent una comprovació
+externa del model, però no s'utilitza per atribuir a l'optimització diferències
+que ja existien entre TensorFlow i la implementació C.
+
+\section{Cost de generar el Q-map}\label{sec:qmap_cost}
+
+La prova específica executa únicament els generadors de Q-map. Utilitza sis
+entrades, onze casos i tres repeticions, és a dir, 198 mesures. No executa ni
+el compressor ni el descompressor. Això aïlla el cost auxiliar de seleccionar
+ROI, consultar la informació de qualitat i escriure el Q-map.
+
+Aquest cost correspon al moment auxiliar de decisió: avaluar el preset sobre la
+imatge, consultar la informació de qualitat disponible i escriure 1.024 valors
+Q. No inclou la passada de còdec necessària per obtenir error base ni aplicar el
+Q-map final. Aquesta separació és la que permet comprovar si la intel·ligència
+espacial afegida és cara o si el coll d'ampolla continua sent el còdec.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Tipus & Mesures & Temps mitjà (s) & p95 (s) & RSS mitjà (KiB) \\
+\midrule
+\code{q204} uniforme & 18 & 0,066 & 0,070 & 1.580 \\
+Adaptive-s8 & 18 & 0,067 & 0,070 & 1.614 \\
+Presets semàntics & 162 & 0,113 & 0,120 & 5.459 \\
+Tots els generadors & 198 & 0,104 & -- & -- \\
+\bottomrule
+\end{tabular}
+\caption{Cost a Raspberry dels generadors de Q-map sobre sis retalls, onze
+casos i tres repeticions. \emph{Mesures} és el nombre d'execucions
+temporitzades. El percentil 95 (p95) indica que el 95\% de mesures no supera
+el temps mostrat.}
+\label{tab:qmap_cost}
+\end{table}
+
+El preset semàntic mitjà representa el 0,043\% del temps de compressió i el
+0,024\% del temps de compressió més descompressió. En altres paraules, el
+compressor tarda aproximadament 2.320 vegades més que la decisió semàntica
+mitjana. Fins i tot \code{cloud\_avoid}, el cas més lent amb 0,173~s de
+mitjana, queda per sota del 0,1\% del compressor.
+
+Aquesta comparació separa dues parts del problema. Detectar la ROI o consultar
+una taula auxiliar és molt barat. El cost fort de la ruta fixed-quality amb error
+mesurat és obtenir aquest error amb el còdec real: una passada de compressor
+costa 261,32~s per retall i compressor més descompressor costa 468,13~s. Per
+tant, les optimitzacions C i el benchmark Raspberry no són només una validació
+posterior; quantifiquen el cost de calcular $\lambda$/Q a bord quan la decisió
+depèn de l'error real de la imatge. La conclusió és que el detector no és el
+coll d'ampolla: el factor limitant és el còdec que proporciona l'error base i
+aplica el Q-map.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{raspberry_qmap_cost.png}
+\caption{Temps mitjà de generació del Q-map comparat amb compressor i pipeline
+complet. S'utilitza escala logarítmica perquè hi ha més de tres ordres de
+magnitud de diferència.}
+\label{fig:qmap_cost}
+\end{figure}
+
+Aquest resultat accepta H6 dins la mida d'entrada mesurada: el cost de decidir
+la ROI automàtica és negligible davant del cost de les transformades
+neuronals. No implica que qualsevol segmentador sigui gratuït. La conclusió és
+específica dels presets algebraics implementats, que recorren les bandes i
+calculen estadístics simples per bloc.
+
+\section{Latència i throughput}\label{sec:throughput}
+
+Un retall conté:
+
+\begin{equation}
+512\cdot512=262.144\;\text{posicions espacials},
+\qquad
+8\cdot512\cdot512=2.097.152\;\text{mostres espectrals}.
+\end{equation}
+
+Amb el compressor optimitzat, el throughput observat és:
+
+\begin{align}
+T_{espacial,enc} &= \frac{262.144}{261,32}
+                   = 1.003\;\text{píxels espacials/s},\\
+T_{mostres,enc} &= \frac{2.097.152}{261,32}
+                   = 8.025\;\text{mostres espectrals/s}.
+\end{align}
+
+Quan s'inclou la descompressió, el temps total és 468,13~s i els valors baixen
+a:
+
+\begin{align}
+T_{espacial,enc+dec} &= \frac{262.144}{468,13}
+                   = 560\;\text{píxels espacials/s},\\
+T_{mostres,enc+dec} &= \frac{2.097.152}{468,13}
+                   = 4.480\;\text{mostres espectrals/s}.
+\end{align}
+
+La Taula~\ref{tab:throughput} evita confondre els dos escenaris.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lrrr>{\raggedright\arraybackslash}X}
+\toprule
+Ruta & Temps/retall & Píxels/s & Mostres/s & Ús principal \\
+\midrule
+Només compressor & 261,32~s & 1.003 & 8.025 & Codificació abans del downlink \\
+Compressor+descompressor & 468,13~s & 560 & 4.480 & Càlcul d'error base o reconstrucció local \\
+\bottomrule
+\end{tabularx}
+\caption{Throughput mesurat per un retall $8\times512\times512$. ``Píxel''
+compta una posició espacial; ``mostra'' compta cada banda per separat.}
+\label{tab:throughput}
+\end{table}
+
+La latència de compressió és 4~min 21~s per retall. Aquest valor és compatible
+amb una demostració funcional i amb processament diferit de poques adquisicions,
+però no permet afirmar per si sol processament en temps real. Una afirmació de
+temps real exigiria comparar aquest throughput amb el cabal documentat del
+sensor, la memòria de buffer i el cicle de servei de la missió concreta.
+
+Com a ordre de magnitud extern, ESA descriu Sentinel-2 com una missió
+multiespectral d'alt cabal que pot adquirir, emmagatzemar i descarregar fins a
+1,6~TB per òrbita \cite{esa_sentinel2_operations}. Aquesta
+referència no és un requisit per a aquest treball, perquè el sensor, el
+maquinari i la missió són diferents, però ajuda a interpretar el resultat: una
+Raspberry processant 55~MiB/h de dades crues no és una solució de temps real per
+a sensors d'alt flux. En canvi, sí pot ser coherent amb processament diferit,
+baixa cadència o selecció prèvia de pocs retalls. El resultat també és
+consistent amb la motivació de plataformes a bord més especialitzades, com les
+demostracions C3SatP/MENUT en òrbita \cite{serra2024c3satp}.
+
+En la ruta fixed-quality amb error mesurat, el descompressor és rellevant perquè
+permet obtenir la distorsió real de la passada base. En una ruta mínima de
+transmissió amb el Q-map decidit sense error base, en canvi, el satèl·lit podria
+executar només generació de Q-map més compressor i deixar la reconstrucció a
+terra. La Taula~\ref{tab:operational_routes_cost} resumeix aquesta diferència.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.32\textwidth}r>{\raggedright\arraybackslash}X}
+\toprule
+Ruta & Temps & Lectura \\
+\midrule
+Q-map sense error base + compressió final & 261,4~s &
+Cost mínim quan la qualitat local es decideix sense mesurar error base. \\
+Error mesurat + Q-map + compressió final & 729,6~s &
+Mesura error base, decideix qualitat i codifica el resultat final. \\
+Taula precalibrada + Q-map + compressió final & 261,4~s &
+Reutilitza informació calibrada a terra i evita la passada base a bord. \\
+\bottomrule
+\end{tabularx}
+\caption{Cost per retall de tres rutes operatives sobre Raspberry. Els temps
+combinen el Q-map semàntic mitjà (0,113~s) amb les mitjanes optimitzades de la
+Taula~\ref{tab:rpi_optimized_time}.}
+\label{tab:operational_routes_cost}
+\end{table}
+
+Els càlculs de la taula són:
+
+\begin{equation}
+0,113+261,32=261,43~\text{s},
+\qquad
+468,13+0,113+261,32=729,56~\text{s}.
+\end{equation}
+
+La taula precalibrada és important perquè desplaça a terra una part cara de la
+decisió. No substitueix la validació de qualitat ni és universal: només és
+fiable si la calibració representa bé el sensor, el tipus d'escena i les zones
+que es volen protegir. Però, quan aquesta condició es compleix, pot ser una ruta
+molt atractiva per a missió: manté el cost a bord pràcticament igual que una
+compressió directa i evita aproximadament 468~s per retall respecte del càlcul
+amb error mesurat. Per això es tracta com una opció operativa rellevant, no com
+un simple detall auxiliar.
+
+\subsection{Capacitat de servei per retalls}
+
+Una altra manera d'interpretar la latència és com una cua de treball. Si la
+Raspberry dedica un nucli de sistema i quatre fils OpenMP al compressor sense
+interrupcions, la taxa màxima observada és:
+
+\begin{equation}
+\mu=\frac{3600}{261,32}=13,77\;\text{retalls/hora}.
+\end{equation}
+
+Això correspon aproximadament a 330 retalls per dia en un escenari ideal de
+servei continu. Com cada RAW ocupa 4~MiB, el processador absorbiria uns
+55~MiB/h de dades crues. Aquests valors són una capacitat de laboratori, no un
+pressupost de missió: no inclouen adquisició, escriptura a emmagatzematge,
+telemetria, altres tasques de l'OBC, períodes de baixa potència ni reinicis.
+
+Si el sensor produeix retalls a una taxa mitjana $\lambda_a$, la cua només és
+estable si:
+
+\begin{equation}
+\lambda_a<\mu.
+\end{equation}
+
+Una adquisició en ràfega podria superar temporalment $\mu$ si existeix buffer,
+però el backlog hauria de buidar-se abans de la següent campanya. Aquesta
+formulació és més útil que afirmar simplement que quatre minuts són molts:
+permet inserir en el futur el nombre real de retalls per òrbita i comprovar si
+la latència és compatible.
+
+\subsection{Què falta per a un throughput de missió}
+
+Per convertir la capacitat de laboratori en una conclusió de sistema calen:
+
+\begin{itemize}[leftmargin=*]
+  \item píxels o mostres generades per segon pel sensor;
+  \item durada i freqüència de les adquisicions;
+  \item memòria disponible per absorbir ràfegues;
+  \item temps de CPU reservat per al compressor;
+  \item potència mitjana i energia per retall;
+  \item cabal i finestres de downlink.
+\end{itemize}
+
+Sense aquests paràmetres no es pot decidir si el 8,84\% de bitrate allibera més
+recurs de sistema del que consumeix el càlcul complet. El projecte sí resol una
+part concreta: el detector semàntic només representa el 0,043\% del temps de
+compressió. La incertesa operativa resideix en el cost del còdec, en l'energia
+per retall i en el perfil de missió.
+
+\section{Temperatura, alimentació i repetibilitat}\label{sec:thermal}
+
+Els registres de Raspberry indiquen valors de \code{get\_throttled} diferents
+de zero, incloent \code{0xd0005} i \code{0xd0008}, i màxims de temperatura pròxims als
+70~\textdegree C en algunes execucions. Això indica que les mesures es van fer
+amb incidències històriques o actives d'alimentació i limitació de freqüència.
+Els temps són reals de la placa utilitzada, però no representen una cota ideal
+del Cortex-A53 amb alimentació estabilitzada i refrigeració controlada.
+
+La comparació optimitzat--baseline continua sent útil perquè les dues campanyes
+utilitzen la mateixa placa, el mateix nombre de fils i la mateixa càrrega.
+Tanmateix, una campanya de caracterització de hardware formal hauria de fixar
+governor, font d'alimentació, temperatura ambient i període de refredament, i
+hauria de mesurar energia per imatge, no només temps.
+
+\section{Cost computacional enfront d'estalvi de bits}\label{sec:cost_benefit}
+
+La decisió final combina els Capítols~\ref{ch:resultats} i~\ref{ch:bord}. En la
+mostra CSMR principal, \code{focus\_bgq128} estalvia un 8,84\% de bitrate
+respecte de \code{q204}. A Raspberry, calcular el preset semàntic afegeix de
+mitjana 0,113~s, un 0,043\% del temps del compressor. Per tant, dins del
+pipeline actual, \textbf{sí que compensa executar el preset}. La pregunta més
+difícil és si compensa la ruta completa de càlcul de qualitat amb error mesurat:
+una compressió individual costa 261,32~s i compressor més descompressor costa
+468,13~s per retall. Aquest cost pot ser acceptable en escenaris de baixa
+cadència o processament diferit, però exigeix més optimització o hardware més
+potent si es vol operar amb un flux d'adquisició alt.
+
+Aquesta conclusió no significa que el sistema complet sigui prou ràpid. El
+coll d'ampolla és el còdec neuronal C, no la selecció ROI. El treball futur
+hauria de prioritzar kernels, vectorització, acceleració o un processador més
+potent abans de simplificar els presets. El guany de compressió és moderat i
+no justifica qualsevol cost computacional; justifica el cost concret mesurat
+dels detectors algebraics.
+
+\section{Discussió de viabilitat}\label{sec:onboard_discussion}
+
+Els resultats permeten separar quatre nivells de viabilitat. Aquesta separació
+evita barrejar una demostració funcional amb una certificació de missió:
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.22\textwidth}>{\raggedright\arraybackslash}X}
+\toprule
+Nivell & Lectura \\
+\midrule
+Funcional &
+Assolit: el bundle C executa compressor, descompressor i artefactes amb menys
+d'1~GiB. Límit: no és software qualificat per a vol. \\
+Decisió espacial &
+Assolit: els presets automàtics costen 0,113~s de mitjana i no requereixen
+operador. Límit: conclusió vàlida per als presets algebraics implementats. \\
+Qualitat/bitrate &
+Assolit dins l'abast: CSMR confirma estalvi de bitrate i ROI conservada en la
+mostra seleccionada. Límit: dataset i màscares limitades. \\
+Missió &
+No demostrat: faltaria fixar cabal de sensor, energia, deadlines, tolerància a
+fallades i hardware qualificat. \\
+\bottomrule
+\end{tabularx}
+\caption{Lectura de viabilitat separada per nivells. Cada fila indica què queda
+demostrat i quin límit impedeix convertir-ho directament en certificació de
+vol.}
+\label{tab:onboard_viability_levels}
+\end{table}
+
+La formulació evita dos extrems: presentar Raspberry com una certificació de
+vol o descartar el resultat perquè no és el computador final. La placa serveix
+per descobrir que la memòria és assumible, que quatre fils milloren el temps,
+que els presets són pràcticament gratuïts i que el còdec encara necessita una
+millora de throughput per a escenaris exigents.
+
+En conjunt, H1 queda acceptada pel que fa a execució completa i memòria
+limitada, H5 queda acceptada per l'acceleració amb paritat i H6 queda acceptada
+pel cost negligible de la decisió espacial. La Raspberry valida aquests
+criteris com a plataforma representativa de baix recurs, però no certifica el
+sistema per a vol. El capítol següent resumeix aquestes respostes i delimita el
+treball futur.

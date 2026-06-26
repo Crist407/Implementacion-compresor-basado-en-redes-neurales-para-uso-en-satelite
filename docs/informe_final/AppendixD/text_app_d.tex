@@ -1,0 +1,80 @@
+% !TEX root = ../main.tex
+\chapter{Declaració d'ús d'intel·ligència artificial}\label{app:ai}
+\fancyhead[RE]{\slshape \textsf{Apèndix \thechapter.\ Ús d'IA}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section*{Pendent de fer}
+\iffalse
+
+\section{Abast de l'assistència}
+
+Durant el desenvolupament s'ha utilitzat una eina d'intel·ligència artificial
+generativa, OpenAI Codex, com a assistent de programació i redacció. Els usos
+principals han estat:
+
+\begin{itemize}[leftmargin=*]
+  \item inspeccionar i resumir l'estructura del repositori;
+  \item proposar scripts d'orquestració, anàlisi i validació;
+  \item ajudar a detectar inconsistències entre resultats, taules i text;
+  \item generar esborranys de codi, documentació i fragments LaTeX;
+  \item facilitar checks estàtics, compilacions i organització de checkpoints;
+  \item reformular explicacions a partir del feedback de revisió.
+\end{itemize}
+
+L'eina no ha substituït l'execució dels experiments, la selecció dels objectius
+ni la validació final. Els binaris C, CSMR i Raspberry han produït els
+artefactes numèrics. Les xifres del document provenen dels checkpoints indicats
+a l'Apèndix~\ref{app:evidence}, no d'una estimació generada per llenguatge.
+
+\section{Supervisió humana}
+
+L'autor ha revisat:
+
+\begin{enumerate}[leftmargin=*]
+  \item cada canvi abans d'incorporar-lo al repositori;
+  \item la compilació i els tests funcionals del codi;
+  \item la correspondència entre CSV, figures i afirmacions;
+  \item les fonts bibliogràfiques i les dades editorials disponibles;
+  \item la interpretació dels resultats i les limitacions;
+  \item la versió final en català.
+\end{enumerate}
+
+Quan una proposta de l'assistent no era compatible amb el codi existent, amb
+la metodologia o amb l'evidència, s'ha corregit o descartat. Les decisions
+tècniques i la responsabilitat sobre el contingut són de l'autor.
+
+\section{Mesures contra errors i fabricació}
+
+Per reduir el risc d'al·lucinacions o afirmacions no traçables s'han aplicat
+les mesures següents:
+
+\begin{itemize}[leftmargin=*]
+  \item no acceptar una xifra sense fitxer font i població identificable;
+  \item preferir fonts primàries, estàndards i documentació oficial;
+  \item compilar el document fins eliminar cites i referències sense resoldre;
+  \item separar resultats mesurats, inferències i treball futur;
+  \item no presentar proxies d'entropia o zlib com a bitrate real;
+  \item conservar scripts i manifests per repetir l'anàlisi;
+  \item verificar manualment les fórmules i les unitats.
+\end{itemize}
+
+\section{Autoria i originalitat}
+
+La memòria continua un treball previ del mateix autor
+\cite{anez2026treball}. Aquest antecedent es cita explícitament i no es copia
+literalment. El text actual reorganitza els fonaments necessaris perquè el
+document sigui autocontingut i identifica les contribucions noves: escala
+lambda005, control espacial, presets, CSMR, preserve-roi, optimització i
+avaluació Raspberry.
+
+L'ús de l'assistent no transfereix autoria ni responsabilitat. El projecte, la
+integració del sistema, els experiments, l'anàlisi crítica i la defensa de les
+decisions corresponen a l'autor.
+
+\section{Límits de la declaració}
+
+Aquesta declaració descriu l'ús de la IA en el projecte i la memòria. No
+implica que el sistema SORTENY executi un model generatiu de llenguatge. El
+còdec neuronal estudiat és un model de compressió entrenat prèviament; els
+presets automàtics implementats a bord són operacions deterministes en C.
+\fi

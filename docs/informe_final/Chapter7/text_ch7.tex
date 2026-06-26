@@ -1,0 +1,572 @@
+% !TEX root = ../main.tex
+\chapter{Resultats de qualitat i compressió}\label{ch:resultats}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Resultats}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{Lectura del capítol}\label{sec:result_reading}
+
+Els resultats segueixen el mateix ordre que la metodologia. Primer es presenta
+el full C-only, que descriu cobertura i serveix de cribratge. Després es mostra
+CSMR, la ruta de referència de SORTENY basada en TensorFlow Compression i
+l'única font de bitrate final. Finalment s'analitzen resultats per preset,
+modes experimentals, \code{preserve-roi}, evidència visual i regles d'ús.
+
+Les comparacions principals utilitzen \code{q204}. Quan apareix
+\code{adaptive\_s8}, s'identifica com a baseline secundari. Tots els deltes ROI
+i fons respecte de \code{q204} s'han recalculat amb la mateixa màscara del
+preset.
+
+\section{Validació del full C-only}\label{sec:full_results}
+
+Els 120 retalls es van processar i van produir 4.800 registres principals, sense
+fallades reportades. Aquest nombre no significa 4.800 imatges diferents, sinó
+les combinacions de 10 presets, 120 retalls i 4 polítiques. Tots els Q-maps
+tenien 1.024 bytes i les reconstruccions conservades tenien la mida esperada.
+
+\subsection{Resultats de cobertura intermèdia}
+
+La Taula~\ref{tab:c_only_mid} resumeix \code{focus\_bgq128} en els casos
+de cobertura intermèdia, és a dir, casos on la ROI ocupa entre el 10\% i el
+70\% dels blocs. En aquesta franja hi ha prou regió protegida i prou fons per
+mesurar redistribució. Totes les files comparen \code{focus\_bgq128} amb
+\code{q204} del mateix retall i la mateixa màscara ROI/fons.
+
+Les magnituds de la taula són:
+
+\begin{itemize}[leftmargin=*]
+  \item $\Delta$ROI =
+  $\mathrm{PSNR}_{ROI}(\mathrm{focus})-\mathrm{PSNR}_{ROI}(\mathrm{q204})$;
+  \item $\Delta$fons =
+  $\mathrm{PSNR}_{fons}(\mathrm{focus})-\mathrm{PSNR}_{fons}(\mathrm{q204})$;
+  \item $\Delta\bar Q =
+  \bar Q(\mathrm{focus})-\bar Q(\mathrm{q204})$;
+  \item $\Delta H =
+  H_{latent}(\mathrm{focus})-H_{latent}(\mathrm{q204})$.
+\end{itemize}
+
+$\Delta H$ és un proxy C-only en bits per símbol latent. No és bitrate real; el
+bitrate real es mesura després amb CSMR. \code{adaptive\_s8} es conserva com a
+control tècnic perquè redistribueix Q amb mitjana propera a 204, però no és el
+baseline principal d'aquesta taula.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{lrrrrrr}
+\toprule
+Preset & Registres & ROI \% & $\Delta$ROI & $\Delta$fons & $\Delta\bar Q$ &
+$\Delta H$ \\
+\midrule
+\code{vegetation} & 29 & 33,6 & +0,257 & -2,069 & -44,75 & -0,206 \\
+\code{chlorophyll} & 5 & 18,9 & +0,168 & -2,088 & -58,47 & -0,269 \\
+\code{cloud\_avoid} & 13 & 43,1 & +0,294 & -2,089 & -36,16 & -0,154 \\
+\code{local\_contrast} & 63 & 35,9 & +0,195 & -2,267 & -42,91 & -0,185 \\
+\code{vegetation\_green} & 25 & 36,7 & +0,270 & -2,064 & -41,92 & -0,193 \\
+\code{clouds} & 23 & 26,9 & +0,160 & -2,115 & -51,33 & -0,234 \\
+\code{low\_ndvi} & 17 & 28,9 & +0,173 & -2,080 & -49,67 & -0,236 \\
+\bottomrule
+\end{tabular}
+\caption{Cribratge C-only per a \code{focus\_bgq128} en casos de cobertura
+intermèdia. \emph{Registres} és el nombre de combinacions retall--preset que
+compleixen el filtre. El baseline és \code{q204}; els deltes de PSNR són en dB
+i $\Delta H$ és en bits per símbol latent.}
+\label{tab:c_only_mid}
+\end{table}
+
+La taula mostra un patró consistent: la ROI guanya aproximadament entre
+0,16 i 0,29~dB, mentre que el fons perd al voltant de 2~dB i la Q mitjana
+baixa. Això valida
+el mecanisme de redistribució i justifica passar casos a CSMR. No demostra
+encara reducció del fitxer codificat. El ranking detallat per proxies queda
+documentat a l'Apèndix~\ref{app:evidence}; en aquest capítol només s'utilitza
+com a criteri de cribratge, no com a resultat final.
+
+\subsection{Cobertura com a resultat}
+
+\code{local\_contrast} produeix 63 casos mid-roi i, per tant, és el preset amb
+més cobertura útil en aquest dataset. \code{vegetation} en produeix 29 i
+\code{vegetation\_green}, 25. \code{chlorophyll} només en produeix cinc. La
+quantitat de registres no mesura qualitat del preset; mesura quantes escenes
+disponibles generen una separació ROI/fons dins l'interval 10--70\%.
+
+\code{clouds} apareix amb resultats C-only, però es manté experimental perquè
+no disposa de B11. \code{cloud\_avoid} té la mateixa limitació espectral, però
+la seva interpretació operativa --protegir zones no ennuvolades o útils-- és
+coherent amb l'objectiu de no gastar bits en núvols probables.
+
+\section{Precisió de \texorpdfstring{\code{global\_target}}{global target}}\label{sec:global_target_results}
+
+\code{global\_target} respon una pregunta diferent de les polítiques amb ROI:
+no intenta redistribuir qualitat dins la imatge, sinó convertir un objectiu
+global de PSNR o MSE en una Q uniforme. Per això s'analitza com a validació de
+predicció, no com a competidor de \code{focus\_bgq128}.
+
+La Figura~\ref{fig:global_target_curve} mostra la corba mesurada Q--PSNR per a
+la calibració global canonical en l'escala actual \code{lambda005}. Aquí
+\emph{rang calibrat} vol dir l'interval de PSNR observat quan es fa variar Q en
+la zona principal Q128--Q255. Si un objectiu cau dins aquest interval, es pot
+interpolar una Q constant. Si l'objectiu queda per sobre de la corba mesurada,
+el mode no pot assolir-lo amb una Q uniforme i satura a Q255.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.90\textwidth]{global_target_lambda005_curves.png}
+\caption{Corba Q--PSNR canonical de \code{global\_target} en la recalibració
+\code{lambda005}. La línia horitzontal marca un objectiu de 76,8~dB. Com que la
+corba canonical arriba només a 74,52~dB amb Q255, aquest target queda fora del
+rang mesurat i la decisió satura.}
+\label{fig:global_target_curve}
+\end{figure}
+
+La Taula~\ref{tab:global_target_precision} resumeix aquesta lectura per a
+l'objectiu 76,8~dB. La idea important és que \code{global\_target} no força
+qualsevol PSNR demanada: només pot seleccionar una Q dins del rang mesurat per
+la calibració disponible.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+Magnitud & Valor & Lectura \\
+\midrule
+Rang PSNR Q128--Q255 & 71,64--74,52~dB & Rang calibrat canonical \\
+\code{q204} & 73,62~dB & Referència uniforme dins del rang \\
+Q255 & 74,52~dB & Màxim mesurat en aquesta calibració \\
+Objectiu 76,8~dB & Fora de rang & Satura a Q255 \\
+\bottomrule
+\end{tabular}
+\caption{Resultats de l'auditoria de \code{global\_target}. La població són
+els punts Q128--Q255 de la calibració canonical \code{lambda005}. No es compara
+contra \code{q204}: valida la conversió objectiu--Q i els seus límits.}
+\label{tab:global_target_precision}
+\end{table}
+
+La conclusió és útil per a la resta de la memòria: la predicció global és
+interpretable quan l'objectiu cau dins el rang calibrat, però no pot inventar
+qualitat quan el target queda fora de la corba mesurada. Aquesta és la mateixa
+raó per la qual les polítiques espacials es validen després amb reconstrucció,
+PSNR ROI/fons i bitrate \code{.tfci}: la Q-map és una decisió de qualitat, però
+el resultat final s'ha de mesurar en una execució real.
+
+L'abast d'aquesta secció és deliberadament limitat. No és una estadística
+multiimatge de \code{global\_target}, sinó una comprovació del mecanisme amb la
+calibració global canònica: mostra com es transforma un objectiu en una Q
+uniforme i què passa quan l'objectiu queda fora del rang mesurat. Una avaluació
+estadística de precisió global requeriria repetir aquesta auditoria sobre més
+retalls i objectius.
+
+\section{Validació CSMR}\label{sec:csmr_results}
+
+Els resultats d'aquesta secció no són prediccions de la taula de calibració. Són
+execucions reals del codificador de referència de SORTENY, implementat amb
+TensorFlow Compression, amb els Q-maps generats prèviament. La taula de
+calibració ajuda a decidir quins valors Q escriure; CSMR mesura què passa quan
+aquests valors es transformen en l'array local de qualitat i es codifiquen els
+latents en un fitxer \code{.tfci}.
+
+La mostra principal es va construir a partir del cribratge C-only: fins a cinc
+casos de \code{cloud\_avoid}, fins a cinc de \code{local\_contrast}, fins a
+quatre de \code{vegetation}, casos addicionals de \code{vegetation\_green} i
+\code{chlorophyll}, i almenys un cas límit o negatiu quan era disponible. La
+selecció no busca estimar una mitjana universal; busca cobrir situacions on la
+redistribució de qualitat és plausible i casos on podria fallar.
+
+\subsection{Correspondència L igual Q}
+
+Els 20 retalls seleccionats generen 60 subcasos: tres polítiques per cada
+retall. Tots van completar compressió i descompressió. Els 60 arrays tenien
+4.096 bytes i els 60 fitxers \code{.tfci}
+van produir reconstruccions amb forma $8\times512\times512$. La comprovació
+clau va donar:
+
+\begin{equation}
+\code{packed\_l\_matches\_qmap}=60/60.
+\end{equation}
+
+Això confirma que l'array local de qualitat aplica per bloc els valors derivats
+del Q-map C. No demostra per si sol que el preset sigui bo; demostra que
+l'experiment mesura la política que s'ha sol·licitat i no una qualitat global
+equivalent. Tampoc valida que la predicció de MSE de la calibració sigui exacta
+en cada bloc; aquesta bondat es jutja amb PSNR, ROI/fons i bitrate \code{.tfci}.
+
+\subsection{Comparació global de polítiques}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Política & Subcasos & Bitrate (bps) & PSNR global (dB) & $L=Q$ \\
+\midrule
+\code{q204} & 20 & 4,0602 & 74,272 & 100\% \\
+\code{adaptive\_s8} & 20 & 4,0634 & 74,291 & 100\% \\
+\code{focus\_bgq128} & 20 & 3,7013 & 72,369 & 100\% \\
+\bottomrule
+\end{tabular}
+\caption{Bitrate real CSMR i PSNR global en els 20 retalls seleccionats. Cada
+fila agrega 20 subcasos, un per retall. El bitrate és en bps, bits per mostra
+espectral codificada.}
+\label{tab:csmr_global}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{csmr_policy_bitrate.png}
+\caption{Bitrate mitjà dels tres controls CSMR sobre els mateixos 20 retalls.
+La comparació principal és contra \code{q204}; \code{adaptive\_s8} s'inclou com
+control de Q variable.}
+\label{fig:csmr_policy}
+\end{figure}
+
+\code{adaptive\_s8} té pràcticament el mateix bitrate que \code{q204}: 4,0634
+enfront de 4,0602~bps. El resultat no implica que el Q-map adaptatiu sigui
+idèntic; conté entre Q196 i Q240. La seva mitjana és 203,994 i la redistribució
+local no canvia prou l'estadística codificada per reduir la taxa global. Per
+tant, \code{adaptive\_s8} és útil com a control de qualitat local, però no aporta
+estalvi mesurable en aquesta mostra.
+
+\code{focus\_bgq128} baixa a 3,7013~bps. Calculant el quocient entre mitjanes:
+
+\begin{equation}
+100\left(1-\frac{3,7013}{4,0602}\right)=8,84\%.
+\end{equation}
+
+El fitxer focus envia el 91,16\% dels bits de \code{q204}, una millora relativa
+d'aproximadament $1,097\times$.
+
+\subsection{Qualitat amb la mateixa màscara}
+
+La mitjana de deltes per cas respecte de \code{q204} és:
+
+\begin{equation}
+\Delta\mathrm{PSNR}_{ROI}=+0,203\;\mathrm{dB},
+\qquad
+\Delta\mathrm{PSNR}_{fons}=-2,204\;\mathrm{dB}.
+\end{equation}
+
+Respecte d'\code{adaptive\_s8}, els valors són +0,2137 i -2,2296~dB. Les dues
+referències condueixen a la mateixa conclusió: el mode conserva o millora la
+ROI i obté l'estalvi degradant el fons. El PSNR global baixa perquè el fons
+ocupa la major part de mostres; aquesta baixada no s'ha d'interpretar sense
+separar regions.
+
+\section{Resultats per preset}\label{sec:preset_results}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{lrrrrr}
+\toprule
+Preset & Subcasos & ROI \% & Estalvi vs \code{q204} & $\Delta$ROI & $\Delta$fons \\
+\midrule
+\code{local\_contrast} & 5 & 10,6 & 11,68\% & +0,147 & -2,504 \\
+\code{cloud\_avoid} & 5 & 20,6 & 11,56\% & +0,280 & -2,158 \\
+\code{vegetation} & 4 & 11,6 & 8,56\% & +0,190 & -1,934 \\
+\code{vegetation\_green} & 3 & 12,8 & 8,00\% & +0,241 & -2,221 \\
+\code{chlorophyll} & 3 & 19,4 & 7,41\% & +0,147 & -2,121 \\
+\bottomrule
+\end{tabular}
+\caption{Combinacions \code{preset + focus\_bgq128} respecte de
+\code{q204}. Els deltes de PSNR són en dB i utilitzen la mateixa màscara. Cada
+fila agrega els subcasos CSMR indicats.}
+\label{tab:preset_csmr}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\textwidth]{csmr_savings_main_presets.png}
+\caption{Estalvi mitjà per preset respecte de \code{q204}. El nombre sobre cada
+barra és la mida de la mostra CSMR, no el nombre de retalls del full.}
+\label{fig:preset_savings}
+\end{figure}
+
+\code{local\_contrast} i \code{cloud\_avoid} superen l'11\% de mitjana en les
+seves mostres. \code{vegetation}, \code{vegetation\_green} i
+\code{chlorophyll} queden entre el 7,4 i el 8,6\%. Tots presenten delta ROI
+positiu i fons negatiu. Per tant, els presets no milloren una ROI manual:
+milloren la qualitat de la regió que ells mateixos detecten respecte de
+comprimir uniformement amb \code{q204}. Aquesta és la contribució operativa
+principal.
+
+Les mitjanes per preset no s'han de comparar sense considerar la mostra.
+Cada preset es va executar en retalls seleccionats diferents. El 11,68\% de
+\code{local\_contrast} no prova que sempre sigui millor que
+\code{vegetation}; prova que, en els cinc casos seleccionats, la seva cobertura
+permet un compromís més agressiu.
+
+\section{Diagrames taxa--distorsió}\label{sec:rd_results}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{rd_roi_q204_focus.png}
+\caption{Diagrama taxa--distorsió dins la ROI. Cada parella unida correspon al
+mateix retall i la mateixa màscara. Un desplaçament a l'esquerra i amunt indica
+menys bitrate i més PSNR ROI.}
+\label{fig:rd_roi}
+\end{figure}
+
+La Figura~\ref{fig:rd_roi} mostra que la majoria de punts focus es desplacen a
+l'esquerra i lleugerament amunt respecte de \code{q204}. La dispersió vertical
+entre retalls és molt més gran que el delta d'una política, perquè les escenes
+tenen errors base diferents. Per això les línies per parella són més
+informatives que comparar núvols de punts sense correspondència.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{rd_background_q204_focus.png}
+\caption{Diagrama taxa--distorsió al fons. El moviment esperat és cap a
+l'esquerra i avall: menys bitrate a canvi de més distorsió en la regió no
+prioritària.}
+\label{fig:rd_background}
+\end{figure}
+
+Al fons, Figura~\ref{fig:rd_background}, el desplaçament cap avall és clar.
+Aquest resultat evita una interpretació equivocada: focus no millora tota la
+imatge mentre comprimeix més. Redistribueix un pressupost de qualitat.
+
+\section{Modes experimentals}\label{sec:experimental_results}
+
+L'auditoria experimental va completar 30 de 30 subcasos i va conservar $L=Q$
+en tots. Cada fila de la Taula~\ref{tab:experimental} compara el mode avaluat
+contra \code{q204} del mateix retall i la mateixa màscara ROI/fons.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrl}
+\toprule
+Mode avaluat & Subcasos & ROI \% & Estalvi & $\Delta$ROI & Lectura \\
+\midrule
+\code{high\_ndvi + focus\_bgq128} & 3 & 20,4 & 6,54\% & +0,165 & Candidat útil \\
+\code{low\_ndvi + focus\_bgq128} & 3 & 4,9 & 9,05\% & +0,120 & ROI massa petita \\
+\code{dark\_regions + focus\_bgq128} & 3 & 62,4 & 1,99\% & +0,384 & ROI massa ampla \\
+\code{water\_body + focus\_bgq128} & 1 & 10,1 & 11,18\% & +0,158 & Una sola mostra \\
+\bottomrule
+\end{tabular}
+\caption{CSMR dels llindars experimentals. Estalvi i PSNR es calculen respecte
+de \code{q204}; el nombre de subcasos limita la força de cada conclusió.}
+\label{tab:experimental}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.74\textwidth]{csmr_experimental_savings.png}
+\caption{Estalvi dels presets experimentals. La mida de mostra s'indica sobre
+cada barra i limita la força de la conclusió.}
+\label{fig:experimental}
+\end{figure}
+
+\code{high\_ndvi} és el resultat més equilibrat: tres casos mid-roi i un
+estalvi del 6,54\%. Per això es va promocionar a la configuració operativa del
+benchmark Raspberry. \code{low\_ndvi} comprimeix més, però dos dels tres casos
+tenen només 0,78\% de ROI; una regió tan dispersa és més vulnerable a
+l'efecte dels blocs veïns. \code{dark\_regions} conserva ROI, però dedica
+qualitat alta a gairebé dos terços de la imatge i deixa poc fons per degradar.
+
+El cas \code{water\_body} requereix una precisió metodològica. Al full original
+amb llindar 0,30, 119 dels 120 retalls no tenien ROI i un tenia una ROI de
+0,098\%. L'optimització va reduir el llindar a 0,10, però només un crop
+representatiu d'aigua havia estat seleccionat per aquell barratge i va passar
+a CSMR. Per tant, una mostra no significa que la resta del dataset sigui tot
+aigua o tota no-ROI amb el llindar nou; significa que l'experiment no va
+regenerar els 120 retalls a 0,10. El 11,18\% és prometedor, però insuficient
+per generalitzar.
+
+\section{Preserve-roi}\label{sec:preserve_results}
+
+La prova CSMR de \code{preserve-roi} va completar 78 subcasos. La
+Taula~\ref{tab:preserve_cloud} mostra dos casos \code{cloud\_avoid} compartits
+per les tres polítiques.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrr}
+\toprule
+Política & Estalvi vs \code{q204} & $\Delta$ROI vs \code{q204} &
+$\Delta$fons vs \code{q204} \\
+\midrule
+\code{focus\_bgq128} & 17,06\% & +0,351 & -2,478 \\
+\code{preserve Q240/Q128} & 15,88\% & +0,626 & -2,480 \\
+\code{preserve Q255/Q128} & 15,30\% & +1,024 & -2,476 \\
+\bottomrule
+\end{tabular}
+\caption{Compromís de \code{preserve-roi} en dos casos \code{cloud\_avoid}.
+Els deltes són dB amb màscara comuna i el baseline és \code{q204}.}
+\label{tab:preserve_cloud}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.76\textwidth]{preserve_roi_tradeoff.png}
+\caption{Intercanvi entre estalvi i preservació de ROI. La posició més a la
+dreta afavoreix compressió; la posició més alta afavoreix qualitat ROI.}
+\label{fig:preserve_tradeoff}
+\end{figure}
+
+El resultat respon a objectius diferents. \code{focus} és preferible si es
+prioritza bitrate. Q255 és preferible si es vol assegurar una ROI clarament
+millor que \code{q204}. Q240 és un compromís intermedi. No hi ha una política
+dominant en les dues dimensions: la decisió depèn de si la missió valora més
+baixar volum de dades o protegir la regió seleccionada.
+
+\section{Evidència visual}\label{sec:visual_results}
+
+Els panells següents tenen quatre columnes:
+
+\begin{enumerate}[leftmargin=*]
+  \item composició RGB de l'entrada;
+  \item màscara del preset superposada en verd;
+  \item Q-map ampliat, on colors clars indiquen Q més alta;
+  \item error absolut amplificat per fer visible la seva distribució.
+\end{enumerate}
+
+L'error amplificat no és l'aspecte de la reconstrucció. La multiplicació visual
+serveix per localitzar on es concentra la pèrdua. La imatge reconstruïda
+completa acostuma a semblar gairebé igual que l'original; la prova quantitativa
+és el PSNR i la prova espacial és el Q-map.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{lrrrr}
+\toprule
+Panell visual & ROI \% & Estalvi vs \code{q204} & $\Delta$ROI &
+$\Delta$fons \\
+\midrule
+\code{cloud\_avoid + focus} & 15,1 & 24,5\% & +0,474 & -2,660 \\
+\code{local\_contrast + focus} & 10,1 & 20,7\% & +0,101 & -2,773 \\
+\code{vegetation + focus} & 10,5 & 9,4\% & +0,156 & -1,921 \\
+\code{high\_ndvi + focus} & 10,9 & 8,1\% & +0,161 & -2,297 \\
+\code{cloud\_avoid + preserve Q240} & 15,1 & 22,9\% & +0,624 & -2,663 \\
+\bottomrule
+\end{tabular}
+\caption{Lectura quantitativa dels panells visuals. El baseline és
+\code{q204}; els deltes de PSNR són en dB amb la mateixa màscara ROI/fons que
+mostra cada panel.}
+\label{tab:visual_metrics}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{01_main_cloud_avoid_focus_bgq128.png}
+\caption{\code{cloud\_avoid + focus\_bgq128}. El preset selecciona la ROI
+detectada com a zona no ennuvolada o útil i el fons queda a Q128. En aquest
+crop, la cobertura és 15,1\%, l'estalvi respecte de \code{q204} és 24,5\% i la
+ROI millora 0,47~dB.}
+\label{fig:visual_cloud}
+\end{figure}
+
+La Figura~\ref{fig:visual_cloud} és un cas especialment favorable, no la
+mitjana del preset. La frontera es veu esglaonada perquè la decisió es pren en
+blocs de $16\times16$. El Q-map mostra variació dins la ROI perquè \code{focus}
+parteix d'\code{adaptive\_s8}; no és un nivell fix.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{02_main_local_contrast_focus_bgq128.png}
+\caption{\code{local\_contrast + focus\_bgq128}. Les zones amb més variació
+visible reben la qualitat adaptativa reforçada.}
+\label{fig:visual_contrast}
+\end{figure}
+
+\code{local\_contrast} no etiqueta una coberta física. La màscara de la
+Figura~\ref{fig:visual_contrast} indica on la desviació visible supera 0,035.
+És útil per conservar vores i textures, però la missió hauria de decidir si
+aquesta prioritat és coherent amb l'aplicació final.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{03_main_vegetation_focus_bgq128.png}
+\caption{\code{vegetation + focus\_bgq128}. La màscara NDVI protegeix blocs
+vegetats i deixa la resta a Q128.}
+\label{fig:visual_vegetation}
+\end{figure}
+
+La Figura~\ref{fig:visual_vegetation} mostra una selecció més fragmentada.
+Aquest tipus de geometria és rellevant perquè el camp receptiu travessa blocs
+veïns. Els resultats indiquen ROI conservada en la mostra CSMR, però regions
+encara més petites podrien requerir dilatar la màscara o utilitzar
+\code{preserve-roi}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{04_experimental_high_ndvi_focus_bgq128.png}
+\caption{\code{high\_ndvi + focus\_bgq128}. Exemple del preset experimental que
+va obtenir tres casos mid-roi consistents.}
+\label{fig:visual_high_ndvi}
+\end{figure}
+
+\code{high\_ndvi} és més restrictiu que \code{vegetation}. La figura permet
+entendre per què els dos presets poden coexistir: no són dues polítiques, sinó
+dos nivells de selecció de la mateixa magnitud espectral.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{05_preserve_cloud_avoid_preserve_roi_q240_bgq128.png}
+\caption{\code{cloud\_avoid + preserve-roi Q240/Q128}. La ROI té un color
+uniforme perquè Q240 és fixa; aquesta és la diferència visual amb el Q-map
+adaptatiu de la Figura~\ref{fig:visual_cloud}.}
+\label{fig:visual_preserve}
+\end{figure}
+
+\section{Abast de la lectura}\label{sec:statistical_reading}
+
+Les comparacions CSMR són aparellades per retall: cada resultat focus,
+experimental o preserve-roi es compara amb el \code{q204} del mateix crop i la
+mateixa màscara. Tot i això, les taules combinen poblacions diferents. El full
+C-only conté 120 retalls; el CSMR principal en conté 20; les taules per preset
+agreguen entre tres i cinc subcasos; i les auditories experimentals provenen de
+mostres separades. Per això els percentatges s'han de llegir com a evidència de
+mecanisme i de compromís, no com una mitjana universal de missió.
+
+\section{Resultats que informen l'usuari}\label{sec:user_implications}
+
+La geometria de la ROI canvia el valor del sistema. La
+Taula~\ref{tab:user_roi_cases} resumeix les decisions derivades.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}p{4.0cm}X}
+\toprule
+Cobertura observada & Conseqüència & Decisió recomanada \\
+\midrule
+ROI buida & Tot rep qualitat de fons; no es preserva cap regió. & Usar
+\code{q204},
+un altre preset o no transmetre si la missió ho permet. \\
+ROI molt petita i dispersa & El camp receptiu travessa blocs veïns i pot
+degradar la regió tot i el Q alt. & Dilatar màscara, usar preserve-roi o revisar
+el llindar. \\
+ROI intermèdia & Hi ha prou ROI i fons per redistribuir qualitat. & Focus és
+el candidat principal si els deltes CSMR són favorables. \\
+ROI molt ampla & Queda poc fons on estalviar i el bitrate s'apropa al control. &
+Usar un llindar més selectiu o \code{q204}. \\
+ROI total & Tots els blocs són prioritaris; no hi ha redistribució espacial. &
+Usar qualitat global o preserve només si es vol Q alta uniforme. \\
+\bottomrule
+\end{tabularx}
+\caption{Implicacions operatives de la cobertura produïda pel preset.}
+\label{tab:user_roi_cases}
+\end{table}
+
+Aquestes regles mostren per què un preset no s'ha de jutjar només pel bitrate.
+\code{low\_ndvi} aconsegueix estalvi en tres casos, però la ROI mitjana és
+petita; \code{dark\_regions} conserva ROI, però n'ocupa massa; \code{water\_body}
+té un cas prometedor sense cobertura suficient. El mode útil no és el que
+produeix el fitxer més petit, sinó el que selecciona una regió coherent amb la
+missió i la conserva a un cost assumible.
+
+\subsection{Focus davant preserve-roi}
+
+La comparació de la Taula~\ref{tab:preserve_cloud} permet formular una regla
+d'usuari. Si el downlink és el recurs dominant, focus ofereix més estalvi. Si
+la pèrdua d'una estructura ROI és més costosa que enviar alguns bits
+addicionals, Q240 o Q255 proporcionen més marge. La selecció no s'ha
+d'automatitzar només amb una mitjana global; forma part dels requisits de
+missió.
+
+Els resultats d'aquest capítol mostren el compromís entre qualitat espacial i
+bitrate real. La pregunta següent és si aquest compromís té un cost assumible en
+hardware de baix recurs; això es tracta al Capítol~\ref{ch:bord}.

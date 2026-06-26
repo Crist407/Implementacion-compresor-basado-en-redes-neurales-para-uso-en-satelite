@@ -1,0 +1,39 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{lmodern}
+\pagestyle{empty}
+\setlength{\unitlength}{1mm}
+\pdfpagewidth=180mm
+\pdfpageheight=58mm
+\setlength{\textwidth}{170mm}
+\setlength{\textheight}{58mm}
+\setlength{\oddsidemargin}{-1in}
+\setlength{\topmargin}{-1in}
+\setlength{\headheight}{0pt}
+\setlength{\headsep}{0pt}
+\setlength{\footskip}{0pt}
+\newcommand{\chainbox}[4]{%
+  \put(#1,#2){\fcolorbox{black}{blue!7}{\parbox[c][16mm][c]{28mm}{\centering\sffamily\scriptsize #3\\[-0.3mm]\textbf{#4}}}}}
+\begin{document}
+\pdfpagewidth=180mm
+\pdfpageheight=58mm
+\noindent
+\begin{picture}(170,58)
+\put(0,0){\color{white}\rule{170mm}{58mm}}
+\chainbox{5}{26}{Qualitat}{PSNR obj.}
+\chainbox{39}{26}{Error}{MSE obj.}
+\chainbox{73}{26}{Contingut}{MSE$_0$}
+\chainbox{107}{26}{Model}{\(\hat{\lambda}\)}
+\chainbox{141}{26}{Info lateral}{Q-map}
+\put(33,34){\vector(1,0){6}}
+\put(67,34){\vector(1,0){6}}
+\put(101,34){\vector(1,0){6}}
+\put(135,34){\vector(1,0){6}}
+\put(16,13){\sffamily\scriptsize \( \widehat{\mathrm{MSE}}=65535^2/10^{\mathrm{PSNR}/10} \)}
+\put(72,8){\sffamily\scriptsize \( \bar{M}(\lambda)=a\lambda+b \), \quad
+\( \widehat{\mathrm{MSE}}=\mathrm{MSE}_0+\alpha\mathrm{MSE}_0/(2\bar{M})^2 \)}
+\put(129,13){\sffamily\scriptsize \( Q\in\{0,\ldots,255\} \)}
+\end{picture}
+\end{document}

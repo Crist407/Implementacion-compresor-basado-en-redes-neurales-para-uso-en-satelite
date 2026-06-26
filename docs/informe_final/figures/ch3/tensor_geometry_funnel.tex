@@ -1,0 +1,39 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{lmodern}
+\pagestyle{empty}
+\setlength{\unitlength}{1mm}
+\pdfpagewidth=170mm
+\pdfpageheight=74mm
+\setlength{\textwidth}{170mm}
+\setlength{\textheight}{74mm}
+\setlength{\oddsidemargin}{-1in}
+\setlength{\topmargin}{-1in}
+\setlength{\headheight}{0pt}
+\setlength{\headsep}{0pt}
+\setlength{\footskip}{0pt}
+\newcommand{\stage}[5]{%
+  \put(#1,#2){\fcolorbox{black}{#5}{\parbox[c][15mm][c]{23mm}{\centering\sffamily\tiny #3\\[-0.5mm]\textbf{#4}}}}}
+\begin{document}
+\pdfpagewidth=170mm
+\pdfpageheight=74mm
+\noindent
+\begin{picture}(170,74)
+\put(0,0){\color{white}\rule{170mm}{74mm}}
+\stage{3}{41}{Entrada}{8 $\times$ 512 $\times$ 512}{blue!8}
+\stage{31}{41}{Espectral}{8 comp.}{green!9}
+\stage{59}{41}{Conv. 0}{128 $\times$ 256 $\times$ 256}{orange!10}
+\stage{87}{41}{Conv. 1}{128 $\times$ 128 $\times$ 128}{orange!10}
+\stage{115}{41}{Conv. 2}{128 $\times$ 64 $\times$ 64}{orange!10}
+\stage{143}{41}{Conv. 3}{8$\cdot$384 $\times$ 32 $\times$ 32}{red!9}
+\put(27,49){\vector(1,0){4}}
+\put(55,49){\vector(1,0){4}}
+\put(83,49){\vector(1,0){4}}
+\put(111,49){\vector(1,0){4}}
+\put(139,49){\vector(1,0){4}}
+\put(9,25){\sffamily\small Resolució espacial: 512 $\rightarrow$ 256 $\rightarrow$ 128 $\rightarrow$ 64 $\rightarrow$ 32}
+\put(108,17){\sffamily\small Graella latent i Q-map: $32\times32$ valors}
+\end{picture}
+\end{document}

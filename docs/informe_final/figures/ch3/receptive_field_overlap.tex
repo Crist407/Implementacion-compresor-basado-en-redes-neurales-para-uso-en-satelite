@@ -1,0 +1,39 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{lmodern}
+\pagestyle{empty}
+\setlength{\unitlength}{1mm}
+\pdfpagewidth=150mm
+\pdfpageheight=82mm
+\setlength{\textwidth}{150mm}
+\setlength{\textheight}{82mm}
+\setlength{\oddsidemargin}{-1in}
+\setlength{\topmargin}{-1in}
+\setlength{\headheight}{0pt}
+\setlength{\headsep}{0pt}
+\setlength{\footskip}{0pt}
+\begin{document}
+\pdfpagewidth=150mm
+\pdfpageheight=82mm
+\noindent
+\begin{picture}(150,82)
+\put(0,0){\color{white}\rule{150mm}{82mm}}
+\put(14,10){\color{blue!5}\rule{72mm}{72mm}}
+\put(14,10){\color{black}\framebox(72,72){}}
+\multiput(26,10)(12,0){5}{\line(0,1){72}}
+\multiput(14,22)(0,12){5}{\line(1,0){72}}
+\put(50,46){\color{green!30}\rule{12mm}{12mm}}
+\put(50,46){\color{green!60!black}\framebox(12,12){}}
+\put(27,23){\color{red}\linethickness{0.45mm}\framebox(58,58){}}
+\put(94,56){\sffamily\scriptsize Bloc de control}
+\put(94,51){\sffamily\scriptsize $16\times16$ px}
+\put(86,53){\vector(-1,0){24}}
+\put(94,32){\sffamily\scriptsize Camp receptiu}
+\put(94,27){\sffamily\scriptsize aproximat}
+\put(94,22){\sffamily\scriptsize $61\times61$ px}
+\put(86,31){\vector(-1,0){24}}
+\put(24,5){\sffamily\small La decisió Q és local, però l'efecte es barreja amb veïnat.}
+\end{picture}
+\end{document}

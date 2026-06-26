@@ -1,0 +1,36 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{lmodern}
+\pagestyle{empty}
+\setlength{\unitlength}{1mm}
+\pdfpagewidth=150mm
+\pdfpageheight=82mm
+\setlength{\textwidth}{150mm}
+\setlength{\textheight}{82mm}
+\setlength{\oddsidemargin}{-1in}
+\setlength{\topmargin}{-1in}
+\setlength{\headheight}{0pt}
+\setlength{\headsep}{0pt}
+\setlength{\footskip}{0pt}
+\begin{document}
+\pdfpagewidth=150mm
+\pdfpageheight=82mm
+\noindent
+\begin{picture}(150,82)
+\put(0,0){\color{white}\rule{150mm}{82mm}}
+\put(8,12){\color{blue!6}\rule{64mm}{64mm}}
+\put(8,12){\color{black}\framebox(64,64){}}
+\multiput(16,12)(8,0){7}{\line(0,1){64}}
+\multiput(8,20)(0,8){7}{\line(1,0){64}}
+\put(18,44){\color{red!20}\rule{8mm}{8mm}}
+\put(18,44){\color{red}\framebox(8,8){}}
+\put(12,5){\sffamily\small Entrada $512\times512$}
+\put(24,78){\sffamily\scriptsize Es dibuixa una graella reduïda per llegibilitat}
+\put(80,44){\vector(1,0){16}}
+\put(102,34){\fcolorbox{black}{red!10}{\parbox[c][18mm][c]{26mm}{\centering\sffamily\scriptsize 1 valor Q\\per cel.la latent}}}
+\put(101,20){\sffamily\small Q-map real: $32\times32$}
+\put(101,12){\sffamily\small Pas espacial: 16 px}
+\end{picture}
+\end{document}

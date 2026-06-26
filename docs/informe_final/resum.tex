@@ -1,0 +1,43 @@
+% !TEX root = main.tex
+\chapter*{Resum\label{Resum}}
+\addcontentsline{toc}{chapter}{Resum}
+\fancyhead[RE]{\slshape \textsf{Resum}} %
+\fancyhead[LO]{\slshape \textsf{Resum}} %
+
+Els satèl·lits d'observació de la Terra adquireixen volums creixents de dades
+multiespectrals sota restriccions d'enllaç de baixada, memòria i processament a
+bord. Aquesta memòria implementa en C el pipeline de compressió i descompressió
+de SORTENY, un còdec neuronal d'imatges multiespectrals, i l'estén amb control
+espacial de qualitat sense selecció manual de regions d'interès.
+
+La qualitat s'assigna per blocs mitjançant mapes generats automàticament a partir
+del contingut espectral i espacial de la imatge. Els detectors identifiquen els
+blocs prioritaris i les polítiques de qualitat decideixen com es distribueix la
+fidelitat entre aquests blocs i el fons. S'han estudiat dues estratègies
+complementàries: una prioritza l'estalvi de bits degradant les regions no
+prioritàries, i l'altra fixa una qualitat alta dins la regió detectada per
+afavorir-ne la conservació.
+
+L'avaluació va incloure 120 retalls Sentinel-2 de vuit bandes. El bitrate
+codificat es va mesurar posteriorment amb el pipeline de referència sobre 20
+retalls seleccionats. L'estratègia orientada a l'estalvi va reduir el bitrate
+mitjà un 8,84\% respecte d'aplicar una qualitat uniforme a tota la imatge,
+mentre mantenia o millorava lleugerament la fidelitat de les regions
+prioritzades i concentrava la degradació al fons. L'estratègia de preservació va
+protegir més aquestes regions a canvi d'un estalvi menor.
+
+La implementació C també es va avaluar en una Raspberry Pi 3B+ com a plataforma
+representativa de recursos limitats. Respecte de la versió C inicial executada
+amb els mateixos quatre fils, les optimitzacions van reduir el temps total
+mitjà un 17,0\%, equivalent a una acceleració d'$1,205\times$, sense canvis
+funcionals detectats ni un augment rellevant de memòria. La generació automàtica
+del mapa de qualitat va representar menys del 0,05\% del temps del còdec. Per
+tant, la decisió espacial té un cost negligible i el principal coll d'ampolla
+és l'execució del còdec neuronal. Com a limitacions, el flux binari C encara no
+incorpora el codificador final per entropia o aritmètic. La Raspberry s'utilitza
+com a referència computacional d'una plataforma a bord de baix recurs; la
+validació sobre el hardware definitiu d'una missió queda fora de l'abast.
+
+\textbf{Paraules clau:} compressió d'imatges multiespectrals, compressió
+apresa, qualitat fixa, regió d'interès, processament a bord, sistemes encastats,
+Raspberry Pi, mapa de qualitat.

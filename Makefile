@@ -1,6 +1,7 @@
 CC = gcc
 MODE ?= release
 OMP ?= 1
+RPI_ARCH ?= auto
 # Generic flags
 LDFLAGS = -lm
 
@@ -27,32 +28,37 @@ endif
 
 # Auto-detect Architecture
 UNAME_M := $(shell uname -m)
+ARCH_FLAGS =
 
-ifeq ($(UNAME_M),aarch64)
-  # Raspberry Pi 3B+/4 (64-bit)
-  CFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 -DUSE_NEON
-  # Note: 64-bit implies NEON support.
-else ifeq ($(UNAME_M),armv7l)
-  # Raspberry Pi 3 (32-bit Legacy) - Not recommended but supported
-  CFLAGS += -mcpu=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard -DUSE_NEON
-else
-  # x86_64 Host (Dev/Test)
-  CFLAGS += -march=native -mtune=native 
-endif
-
-# Manual Overrides (Optional)
 ifeq ($(RPI_ARCH),rpi3)
-  CFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 -DUSE_NEON
+  ARCH_FLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 -DUSE_NEON
+else ifeq ($(RPI_ARCH),rpi4)
+  ARCH_FLAGS += -mcpu=cortex-a72 -mtune=cortex-a72 -DUSE_NEON
+else ifeq ($(RPI_ARCH),auto)
+  ifeq ($(UNAME_M),aarch64)
+    # Raspberry Pi 3B+/4 (64-bit). Default to Cortex-A53 because our board is Pi 3B+.
+    ARCH_FLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 -DUSE_NEON
+    # Note: 64-bit implies NEON support.
+  else ifeq ($(UNAME_M),armv7l)
+    # Raspberry Pi 3 (32-bit Legacy) - Not recommended but supported
+    ARCH_FLAGS += -mcpu=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard -DUSE_NEON
+  else
+    # x86_64 Host (Dev/Test)
+    ARCH_FLAGS += -march=native -mtune=native
+  endif
+else
+  $(error RPI_ARCH must be auto, rpi3 or rpi4)
 endif
-ifeq ($(RPI_ARCH),rpi4)
-  CFLAGS += -mcpu=cortex-a72 -mtune=cortex-a72 -DUSE_NEON
-endif
+
+CFLAGS += $(ARCH_FLAGS)
 
 TARGET_ENC = sorteny_compressor
 TARGET_DEC = sorteny_decompressor
 TARGET_TEST = sorteny_decoder_ops_test
 TARGET_FQ = sorteny_fq_qmap
 TARGET_SEM = sorteny_semantic_qmap
+TARGET_QUICKLOOK = sorteny_quicklook
+TARGET_GLOBAL = sorteny_global_qmap
 SRC_DIR = src/c
 INPUT_RAW ?= data/T31TCG_20230907T104629_5.8_512_512_2_1_0.raw
 LAMBDA ?= 0.1
@@ -73,20 +79,24 @@ DEC_SRCS = $(SRC_DIR)/decompress.c $(COMMON_SRCS)
 TEST_SRCS = $(SRC_DIR)/test_decoder_ops.c $(COMMON_SRCS)
 FQ_SRCS = $(SRC_DIR)/fixed_quality_qmap.c
 SEM_SRCS = $(SRC_DIR)/semantic_qmap.c
+QUICKLOOK_SRCS = $(SRC_DIR)/quicklook.c
+GLOBAL_SRCS = $(SRC_DIR)/global_qmap.c
 
 ENC_OBJS = $(ENC_SRCS:.c=.o)
 DEC_OBJS = $(DEC_SRCS:.c=.o)
 TEST_OBJS = $(TEST_SRCS:.c=.o)
 FQ_OBJS = $(FQ_SRCS:.c=.o)
 SEM_OBJS = $(SEM_SRCS:.c=.o)
-DEPS = $(ENC_OBJS:.o=.d) $(DEC_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(FQ_OBJS:.o=.d) $(SEM_OBJS:.o=.d)
+QUICKLOOK_OBJS = $(QUICKLOOK_SRCS:.c=.o)
+GLOBAL_OBJS = $(GLOBAL_SRCS:.c=.o)
+DEPS = $(ENC_OBJS:.o=.d) $(DEC_OBJS:.o=.d) $(TEST_OBJS:.o=.d) $(FQ_OBJS:.o=.d) $(SEM_OBJS:.o=.d) $(QUICKLOOK_OBJS:.o=.d) $(GLOBAL_OBJS:.o=.d)
 
-.PHONY: all clean distclean run run_dec run_pipeline run_parity run_fast test_ops rpi3 rpi4 rpi3_fast rpi4_fast
+.PHONY: all clean distclean run run_dec run_pipeline run_parity run_fast test_ops print_config rpi3 rpi4 rpi3_fast rpi4_fast
 
 # Permite usar '>' como prefijo de recetas en lugar de tabulador
 .RECIPEPREFIX := >
 
-all: $(TARGET_ENC) $(TARGET_DEC) $(TARGET_FQ) $(TARGET_SEM)
+all: $(TARGET_ENC) $(TARGET_DEC) $(TARGET_FQ) $(TARGET_SEM) $(TARGET_QUICKLOOK) $(TARGET_GLOBAL)
 
 $(TARGET_ENC): $(ENC_OBJS)
 > @echo Enlazando: $@
@@ -107,6 +117,14 @@ $(TARGET_FQ): $(FQ_OBJS)
 $(TARGET_SEM): $(SEM_OBJS)
 > @echo Enlazando: $@
 > $(CC) $(CFLAGS) -o $@ $(SEM_OBJS) $(LDFLAGS)
+
+$(TARGET_QUICKLOOK): $(QUICKLOOK_OBJS)
+> @echo Enlazando: $@
+> $(CC) $(CFLAGS) -o $@ $(QUICKLOOK_OBJS) $(LDFLAGS)
+
+$(TARGET_GLOBAL): $(GLOBAL_OBJS)
+> @echo Enlazando: $@
+> $(CC) $(CFLAGS) -o $@ $(GLOBAL_OBJS) $(LDFLAGS)
 
 %.o: %.c
 > @echo Compilando: $<
@@ -134,6 +152,16 @@ run_fast: $(TARGET_ENC) $(TARGET_DEC)
 test_ops: $(TARGET_TEST)
 > ./$(TARGET_TEST)
 
+print_config:
+> @echo "CC=$(CC)"
+> @echo "MODE=$(MODE)"
+> @echo "OMP=$(OMP)"
+> @echo "RPI_ARCH=$(RPI_ARCH)"
+> @echo "UNAME_M=$(UNAME_M)"
+> @echo "ARCH_FLAGS=$(ARCH_FLAGS)"
+> @echo "CFLAGS=$(CFLAGS)"
+> @echo "LDFLAGS=$(LDFLAGS)"
+
 # --- SHORTCUTS PARA RASPBERRY ---
 
 rpi3:
@@ -150,7 +178,7 @@ rpi4_fast:
 
 clean:
 > @echo Limpiando...
-> rm -f $(TARGET_ENC) $(TARGET_DEC) $(TARGET_TEST) $(TARGET_FQ) $(TARGET_SEM) $(ENC_OBJS) $(DEC_OBJS) $(TEST_OBJS) $(FQ_OBJS) $(SEM_OBJS) $(DEPS)
+> rm -f $(TARGET_ENC) $(TARGET_DEC) $(TARGET_TEST) $(TARGET_FQ) $(TARGET_SEM) $(TARGET_QUICKLOOK) $(TARGET_GLOBAL) $(ENC_OBJS) $(DEC_OBJS) $(TEST_OBJS) $(FQ_OBJS) $(SEM_OBJS) $(QUICKLOOK_OBJS) $(GLOBAL_OBJS) $(DEPS)
 
 distclean: clean
 

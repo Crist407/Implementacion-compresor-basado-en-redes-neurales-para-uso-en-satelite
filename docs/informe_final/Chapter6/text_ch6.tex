@@ -1,0 +1,265 @@
+% !TEX root = ../main.tex
+\chapter{Metodologia experimental}\label{ch:metodologia}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Metodologia experimental}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{Principis de disseny experimental}\label{sec:principis_exp}
+
+L'avaluació s'ha organitzat com un embut perquè cada etapa respon una pregunta
+diferent. Primer es comprova que el sistema C genera artefactes vàlids sobre una
+mostra ampla. Després es seleccionen casos prometedors amb proxies barats.
+Només al final s'executen proves costoses: bitrate real amb CSMR i temps a
+Raspberry. Aquesta estructura evita executar CSMR o hardware de baix recurs per
+milers de combinacions sense evidència prèvia.
+
+\begin{figure}[H]
+\centering
+\fbox{\begin{minipage}{0.92\textwidth}
+\centering
+compressió/descompressió base
+$\rightarrow$ càlcul $\lambda$/Q
+$\rightarrow$ Q-map
+$\rightarrow$ full C-only
+$\rightarrow$ CSMR
+$\rightarrow$ Raspberry
+\end{minipage}}
+\caption{Seqüència metodològica, de major cobertura a major cost. El full
+C-only criba candidats; CSMR mesura bitrate real; Raspberry mesura cost a bord.}
+\label{fig:experiment_funnel}
+\end{figure}
+
+El compressor i el descompressor formen part del càlcul de qualitat quan es
+treballa amb error mesurat: proporcionen l'error base que després es converteix
+en $\lambda$/Q amb les fórmules fixed-quality. Per això els temps de compressió i
+descompressió s'avaluen com una part central del sistema, no com una comprovació
+accessòria. En paral·lel, els generadors de Q-map permeten repetir comparatives
+àmplies de manera controlada i separar el cost de decidir la qualitat local del
+cost d'aplicar el còdec neuronal.
+
+\subsection{Terminologia experimental}
+
+La memòria utilitza les unitats següents:
+
+\begin{description}[leftmargin=3.1cm,style=nextline]
+  \item[Retall] Imatge d'entrada de $512\times512$ píxels i vuit bandes.
+  \item[Generació de Q-map] Càlcul dels 1.024 valors Q a partir d'una base de
+  qualitat, una estimació d'error i, si escau, un preset.
+  \item[Registre] Fila analítica d'una taula C-only, definida per retall, preset
+  i política.
+  \item[Subcas CSMR] Compressió real amb la referència SORTENY basada en
+  TensorFlow Compression, que produeix un fitxer \code{.tfci}.
+  \item[Execució temporitzada] Mesura del temps, CPU i memòria d'un binari C o
+  d'un generador de Q-map.
+\end{description}
+
+També es fan servir tres conceptes de comparació:
+
+\begin{description}[leftmargin=3.1cm,style=nextline]
+  \item[Baseline] Compressió de referència contra la qual es calcula una millora
+  o una pèrdua.
+  \item[Màscara comuna] Mateixa ROI aplicada a reconstruccions diferents del
+  mateix retall per calcular deltes justos de PSNR.
+  \item[Cobertura ROI] Percentatge de blocs seleccionats pel preset. No es fixa
+  manualment; és una conseqüència del detector i del llindar.
+\end{description}
+
+\section{Hipòtesis i criteris d'avaluació}\label{sec:hipotesis}
+
+Les quatre preguntes de recerca formulades al Capítol~\ref{ch:introduccio} es
+concreten en sis hipòtesis. La Taula~\ref{tab:hipotesis} fixa abans dels
+resultats quina evidència s'utilitza per avaluar cadascuna.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{p{0.6cm}p{0.5cm}X X}
+\toprule
+ & P & Hipòtesi & Criteri d'avaluació \\
+\midrule
+H1 & P1 & El pipeline C complet pot reproduir el comportament esperat del model
+de referència amb memòria limitada. & Tests d'operadors, descompressió
+correcta, paritat dels artefactes i comparació de reconstruccions. \\
+H2 & P2 & Els presets automàtics poden substituir la selecció manual en casos
+interpretables. & Cobertura espacial no degenerada, consistència entre retalls
+i evidència visual de les regions seleccionades. \\
+H3 & P3 & La qualitat espacial variable redueix bitrate real respecte de
+\code{q204} uniforme sense perjudicar la regió protegida. & Mida dels fitxers
+\code{.tfci} i PSNR de regió i fons calculats amb una mateixa màscara. \\
+H4 & P3 & \code{focus\_bgq128} i \code{preserve-roi} cobreixen objectius
+diferents. & Comparació taxa--distorsió entre màxim estalvi i màxima
+conservació de la regió protegida. \\
+H5 & P4 & Les optimitzacions C acceleren el pipeline sense alterar-ne el resultat
+funcional. & Speedup en Raspberry i auditoria de paritat entre la versió de
+referència C i la versió optimitzada. \\
+H6 & P4 & El cost de decidir el Q-map és petit davant del cost del còdec. &
+Percentatge de temps de generació del Q-map respecte de la compressió i del
+pipeline complet. \\
+\bottomrule
+\end{tabularx}
+\caption{Relació entre les preguntes de recerca, les hipòtesis i els criteris
+d'avaluació.}
+\label{tab:hipotesis}
+\end{table}
+
+\section{Dataset}\label{sec:dataset}
+
+El conjunt principal conté 120 retalls procedents d'adquisicions Sentinel-2.
+Cada fitxer RAW té vuit bandes, $512\times512$ píxels per banda, mostres
+\code{uint16}, ordre BSQ i mida exacta de 4.194.304 bytes. Els noms dels fitxers
+codifiquen tile, data d'adquisició, identificador de retall, bandes, dimensions,
+datatype i endianess.
+
+L'objectiu no és construir un benchmark global de Sentinel-2, sinó disposar de
+variabilitat espacial suficient per provar cobertura, casos buits, ROI àmplies i
+diferents presets. La limitació principal és espectral: no hi ha B11 ni B12. Els
+presets que depenen de SWIR no poden avaluar-se en la seva versió completa.
+\code{clouds} i \code{cloud\_avoid} utilitzen el fallback visible i, per tant,
+els resultats no es poden llegir com una validació completa de detecció de
+núvols.
+
+\section{Baselines i polítiques}\label{sec:baselines}
+
+\code{q204} és el baseline narratiu principal. Assigna Q=204 als 1.024 blocs,
+no defineix ROI i no dona cap tractament especial a cap zona. És la referència
+adequada per respondre la pregunta d'usuari: què es guanya respecte d'una
+compressió uniforme? També manté continuïtat amb el punt de qualitat utilitzat
+al treball previ, separant-lo de la nova escala de $\lambda$.
+
+\code{adaptive\_s8} és un control tècnic secundari. Manté aproximadament Q
+mitjana 204, però redistribueix qualitat segons dificultat relativa del bloc. No
+usa cap preset. Serveix per separar l'efecte de Q variable de l'efecte de
+prioritat semàntica.
+
+\code{global\_target} es tracta a part. No és una política de ROI i, per tant,
+no forma part del full factorial de presets. La seva funció metodològica és
+validar la conversió global ``objectiu de PSNR/MSE $\rightarrow$ Q constant'':
+si l'objectiu cau dins el rang calibrat, el sistema selecciona una Q uniforme;
+si queda fora del rang mesurat, la decisió ha de saturar al límit disponible.
+Això permet avaluar la precisió i els límits de la predicció abans d'entrar en
+polítiques espacials.
+
+El full C-only combina quatre polítiques analítiques. Les tres que s'interpreten
+al cos de la memòria són \code{q204}, \code{adaptive\_s8} i
+\code{focus\_bgq128}. La quarta és una política auxiliar de cribratge, inclosa
+per explorar variants abans de fixar la ruta final; la seva definició operativa
+queda documentada als apèndixs i no es presenta com a mode principal.
+
+\section{Full C-only}\label{sec:full_c}
+
+El full C-only és l'etapa ampla i barata de l'embut. Executa el còdec C,
+registra artefactes, qualitat i proxies de compressibilitat, però no produeix
+bitrate final. La seva funció és doble: comprovar robustesa sobre 120 retalls i
+prioritzar quins casos mereixen CSMR.
+
+\subsection{Disseny factorial}
+
+El full combina:
+
+\begin{equation}
+10\;\text{presets}\times120\;\text{retalls}
+\times4\;\text{polítiques}=4.800\;\text{registres}.
+\end{equation}
+
+Un \emph{registre} és una fila de resultats per una combinació de retall, preset
+i política. No equival necessàriament a una compressió C nova, perquè els
+controls \code{q204} i \code{adaptive\_s8} es comparteixen entre presets. Quan
+una taula agregada parla de registres o d'execucions analítiques, es refereix a
+aquestes files analítiques, no a 4.800 imatges diferents.
+
+Els presets són \code{vegetation}, \code{vegetation\_green},
+\code{chlorophyll}, \code{clouds}, \code{cloud\_avoid},
+\code{local\_contrast}, \code{dark\_regions}, \code{low\_ndvi},
+\code{high\_ndvi} i \code{water\_body}. La ruta manual queda exclosa perquè
+l'objectiu del treball és substituir la selecció manual per presets automàtics.
+
+Les quatre polítiques del full són \code{q204}, \code{adaptive\_s8},
+\code{focus\_bgq128} i una política auxiliar de cribratge. Això produeix quatre
+files analítiques per cada parella retall--preset, tot i que els dos controls
+globals es reutilitzen entre presets.
+
+\code{preserve-roi} no forma part d'aquest full factorial principal. Es va
+avaluar després en una auditoria independent perquè respon una pregunta
+diferent: no busca el màxim estalvi, sinó comprovar què passa quan la ROI rep una
+Q alta fixa i el fons queda degradat. Aquesta separació evita barrejar el
+cribratge de \code{focus\_bgq128} amb una política orientada explícitament a
+conservar ROI.
+
+\subsection{Artefactes i validacions}
+
+El full comprova que cada Q-map té 1.024 bytes, que el bitstream C és llegible
+pel descompressor, que la reconstrucció RAW recupera la mida esperada i que els
+resums de Q, PSNR/MSE, entropia i zlib es poden calcular. Aquestes comprovacions
+no substitueixen la validació tècnica del còdec descrita a la
+Secció~\ref{sec:tests_c}; només asseguren que les combinacions experimentals
+generen artefactes analitzables abans de passar a etapes més cares.
+
+\subsection{Cribratge cap a CSMR}
+
+Una fila candidata ha de mantenir la ROI, degradar el fons de manera mesurable i
+reduir la qualitat mitjana:
+
+\begin{align}
+\Delta\mathrm{PSNR}_{ROI/adapt}&\geq-0,05\;\mathrm{dB},\\
+\Delta\mathrm{PSNR}_{fons/adapt}&\leq-0,30\;\mathrm{dB},\\
+\Delta\bar Q_{adapt}&<0.
+\end{align}
+
+A més, es revisen proxies de compressibilitat com entropia i zlib dels latents.
+Aquests proxies no són bitrate real; només serveixen per ordenar candidats i
+evitar executar CSMR sobre combinacions sense evidència prèvia. La fórmula de
+ranking utilitzada per a aquesta priorització queda documentada a
+l'Apèndix~\ref{app:evidence}.
+
+\section{Auditoria de llindars}\label{sec:llindar_method}
+
+Un llindar transforma una magnitud contínua, com NDVI o contrast visible, en una
+màscara binària de ROI. La seva elecció no pot dependre només del bitrate d'un
+cas: també ha d'evitar ROI buides, ROI totals, ROI massa petites i ROI massa
+àmplies. L'auditoria de llindars revisa casos bons, medians i límit del full
+C-only i busca un valor que mantingui cobertura interpretable en més d'una
+escena.
+
+La lectura és metodològica. Un llindar massa alt pot seleccionar només punts
+aïllats i fer la ROI vulnerable al veïnat de blocs de baixa qualitat. Un llindar
+massa baix pot convertir gairebé tota la imatge en ROI i eliminar l'espai on
+estalviar bits. El resultat d'aquesta auditoria s'avalua al
+Capítol~\ref{ch:resultats}, on es mostren els modes principals, experimentals i
+\code{preserve-roi}.
+
+\section{CSMR i bitrate real}\label{sec:csmr_method}
+
+El bitstream C del Capítol~\ref{ch:pipeline} és un contenidor intermedi per
+validar el pipeline C. Per mesurar bitrate codificat s'utilitza CSMR, la ruta de
+referència de SORTENY basada en TensorFlow Compression. Aquesta ruta és la que
+genera fitxers \code{.tfci}; per això és l'única etapa que permet parlar de bps
+final, és a dir, bits per mostra espectral codificada.
+
+CSMR rep els Q-maps generats en C com un array local de qualitat. L'auditoria
+comprova que el tensor de qualitat empaquetat coincideix amb el Q-map sol·licitat
+i després mesura bitrate, PSNR global, PSNR ROI i PSNR de fons. Aquesta etapa no
+és una predicció de la taula de calibració: és una compressió real amb el
+codificador de referència de SORTENY.
+
+Per comparar polítiques es fan servir màscares comunes. Si una política
+semàntica defineix una ROI, aquesta mateixa màscara s'aplica també a les
+reconstruccions \code{q204} i \code{adaptive\_s8} del mateix retall. Així,
+$\Delta ROI$ i $\Delta fons$ comparen exactament les mateixes mostres.
+
+\section{Metodologia Raspberry}\label{sec:rpi_method}
+
+La fase Raspberry mesura si la ruta C s'executa en una plataforma representativa
+de baix recurs, amb quanta memòria i amb quin temps. Utilitza el mateix conjunt
+de pesos, retalls representatius i llindars, però no executa TensorFlow. La
+comparació s'organitza en tres blocs:
+
+\begin{enumerate}[leftmargin=*]
+  \item escalat inicial amb 1, 2 i 4 fils;
+  \item versió C optimitzada amb quatre fils i auditoria de paritat;
+  \item cost separat dels generadors de Q-map.
+\end{enumerate}
+
+La mètrica principal és el temps per retall i política, separat en compressió,
+descompressió i total. També es registra RSS màxim, temperatura, throttling,
+nombre de fils i integritat dels artefactes. Aquesta separació permet distingir
+el cost del preset, que només decideix Q, del cost del còdec, que mesura error,
+transforma la imatge i reconstrueix.

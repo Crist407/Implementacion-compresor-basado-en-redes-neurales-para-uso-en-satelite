@@ -1,0 +1,565 @@
+% !TEX root = ../main.tex
+\chapter{Control espacial de qualitat}\label{ch:control}
+\fancyhead[RE]{\slshape \textsf{Capítol \thechapter.\ Control espacial de qualitat}}
+\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+
+\section{De lambda global a Q-map}\label{sec:qmap_intro}
+
+Els capítols anteriors han definit la relació entre qualitat, modulació i
+latents. Aquest capítol fixa com es converteix aquesta idea en una decisió de
+disseny: en lloc d'utilitzar una única qualitat per tota la imatge, el sistema
+pot assignar una qualitat diferent a cada cel·la latent. En la ruta C, aquesta
+informació és un Q-map de $32\times32$ bytes. Cada posició correspon a una
+cel·la latent associada a una regió de control de $16\times16$ píxels en una
+imatge $512\times512$.
+
+El control espacial es construeix amb tres capes conceptuals:
+
+\begin{enumerate}[leftmargin=*]
+  \item una \textbf{base de qualitat}, que defineix el valor inicial de Q abans
+  de considerar cap regió d'interès;
+  \item un \textbf{preset}, que calcula una màscara binària sobre els blocs i
+  indica quins es tractaran com a ROI;
+  \item una \textbf{política}, que decideix com transformar la base i la màscara
+  en el Q final de cada bloc.
+\end{enumerate}
+
+La base respon a la pregunta \emph{de quin nivell de qualitat partim?}. Pot ser
+uniforme, si tots els blocs comencen amb el mateix Q, o adaptativa, si cada bloc
+rep un valor inicial diferent segons el seu comportament local. El preset respon
+a la pregunta \emph{quins blocs són importants per aquest criteri?}. La política
+respon a la pregunta \emph{què fem amb els blocs marcats i amb els no marcats?}
+
+Un exemple abstracte és:
+
+\begin{equation}
+\text{base de qualitat}
+\;+\;
+\text{màscara ROI}
+\;+\;
+\text{regla d'assignació}
+\;\longrightarrow\;
+\text{Q-map final}.
+\end{equation}
+
+El compressor no interpreta si una regió és vegetació, aigua, núvol o contrast
+visible. Només rep el Q-map final. Aquesta separació és important perquè permet
+canviar el criteri que detecta la ROI sense modificar el còdec, i permet canviar
+la política de qualitat sense reescriure el detector.
+
+\section{Escala de lambda i calibració}\label{sec:lambda005}
+
+\subsection{Escala inicial del treball previ}
+
+El treball anterior utilitzava una escala global amb $\lambda_{\max}=0,125$.
+En aquella configuració, el punt històric $\lambda=0,1$ es quantitzava com:
+
+\begin{equation}
+Q=\operatorname{round}\left(255\frac{0,1}{0,125}\right)=204.
+\end{equation}
+
+Aquesta relació era suficient per reproduir una qualitat global fixada a tota
+la imatge. En passar a control espacial, però, la decisió ja no és un únic valor:
+cal indicar un Q diferent per cel·la latent, reconstruir-lo al descompressor i
+comprovar que la qualitat demanada és la qualitat aplicada. Per això convé fixar
+una escala explícita i única abans de comparar qualitat local i mida codificada.
+
+\subsection{Escala utilitzada en aquesta memòria}
+
+Per aquest motiu es defineix una escala explícita:
+
+\begin{equation}
+\lambda(Q)=\frac{Q}{255}\cdot0,05.
+\label{eq:lambda005_control}
+\end{equation}
+
+Aquesta configuració s'anomena \code{lambda005}. El nom només indica el màxim
+de l'escala de lambda. No canvia l'arquitectura del model ni els pesos
+entrenats; canvia la manera com es tradueix un enter Q de 8 bits al valor de
+$\lambda$ que rep el modulador.
+
+La conseqüència pràctica és que qualsevol Q-map queda definit per una cadena
+única:
+
+\begin{equation}
+Q_i \longrightarrow \lambda_i \longrightarrow M(\lambda_i)
+\longrightarrow \text{quantització dels latents}.
+\end{equation}
+
+Els capítols de metodologia i resultats comproven després que aquesta cadena es
+manté coherent en els experiments. Aquí només es fixa la convenció que utilitza
+la resta de la memòria.
+
+\subsection{Calcular, decidir i validar}
+
+La idea principal del control fixed-quality és calcular quina $\lambda$, i per
+tant quina Q, necessita una imatge o una regió per acostar-se a una qualitat
+objectiu. Per fer-ho no n'hi ha prou amb mirar el preset: cal conèixer l'error
+base que produeix el model sobre aquella imatge. En la ruta de càlcul que
+s'avalua en aquest treball, aquest error base s'obté amb el còdec real:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Compressió i descompressió base}. La imatge es comprimeix amb
+  una qualitat de referència i es descomprimeix per obtenir una reconstrucció.
+  Aquesta passada permet mesurar MSE o PSNR global i per bloc.
+  \item \textbf{Càlcul de $\lambda$/Q}. L'error mesurat s'introdueix a les
+  fórmules fixed-quality. El resultat és una $\lambda$ objectiu, que es quantitza
+  com a Q i s'escriu al Q-map.
+  \item \textbf{Aplicació del Q-map}. El Q-map calculat es combina amb la base,
+  el preset i la política, i s'aplica en una compressió final. Aquesta etapa dona
+  la reconstrucció final, el PSNR, els temps i, amb CSMR, el bitrate codificat.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\fbox{\begin{minipage}{0.92\textwidth}
+\centering
+Imatge
+$\rightarrow$ compressió/descompressió base
+$\rightarrow$ MSE/MSE$_0$
+$\rightarrow$ $\lambda$/Q
+$\rightarrow$ Q-map
+$\rightarrow$ compressió final
+$\rightarrow$ mètriques reals
+\end{minipage}}
+\caption{Ruta principal de càlcul de qualitat: el còdec real proporciona l'error
+base, les fórmules fixed-quality dedueixen $\lambda$/Q i el Q-map resultant
+s'aplica a la compressió final.}
+\label{fig:calibration_decision_validation}
+\end{figure}
+
+Aquest plantejament explica per què el compressor i el descompressor C són tan
+importants. No són només eines de comprovació posterior: formen part del cost que
+cal avaluar si es vol calcular qualitat a bord amb error mesurat. Una alternativa
+pràctica és guardar relacions ja mesurades en una taula auxiliar. Aquesta idea
+serveix per accelerar campanyes, comparar polítiques i mantenir traçabilitat. Els
+capítols següents separen aquests dos usos: el càlcul amb error mesurat i la
+taula com a suport experimental.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{p{2.6cm}X X X}
+\toprule
+Estratègia & Com decideix Q & Cost a bord & Ús en aquesta memòria \\
+\midrule
+Càlcul amb error mesurat & Comprimeix i descomprimeix una qualitat base, mesura
+MSE/MSE$_0$ i aplica les fórmules fixed-quality per deduir $\lambda$/Q. & Alt:
+inclou una passada de compressor i descompressor abans o dins la decisió de
+qualitat. & Ruta principal que es vol avaluar per processament a bord. Justifica
+les mesures de temps i les optimitzacions C. \\
+Taula precalibrada & Reutilitza errors i coeficients mesurats prèviament per
+calcular Q sense repetir la passada base en cada comparativa. & Baix: lectura de
+taula, càlcul del preset i escriptura del Q-map. & Suport pràctic per accelerar
+experiments, comparar polítiques, fixar rangs i reproduir resultats. \\
+Q fixa directa & Assigna valors decidits sense model predictiu, per exemple
+Q uniforme o ROI/fons fixos. & Molt baix. & Base de \code{q204} i
+\code{preserve-roi}; actua com a control i com a política de conservació de ROI. \\
+\bottomrule
+\end{tabularx}
+\caption{Estratègies per decidir la qualitat. La ruta amb error mesurat és la
+lectura principal del treball; la taula precalibrada és una eina auxiliar per fer
+comparatives reproduïbles sense repetir sempre la passada base.}
+\label{tab:q_decision_strategies}
+\end{table}
+
+\subsection{Calibració per bloc}
+
+La calibració per bloc és el pont entre les fórmules del capítol anterior i les
+decisions discretes que ha de prendre el sistema. En la ruta amb error mesurat,
+el MSE base prové de la passada real del còdec. En les campanyes àmplies, aquest
+mateix coneixement es pot guardar en una taula per evitar repetir la mesura en
+cada comparativa. Per això la taula no és la contribució central, sinó una
+representació compacta de mesures i ajustos previs.
+
+La taula auxiliar apareix com una resposta pràctica al cost de repetir sempre la
+compressió i la descompressió base. La idea és mesurar prèviament diversos valors
+discrets de Q, observar l'error per bloc i ajustar el model:
+
+\begin{equation}
+\mathrm{MSE}\simeq c_0+\frac{c_1}{(m_a\lambda+m_b)^2}.
+\end{equation}
+
+Per cada posició de la graella latent, aquesta representació guarda coeficients
+ajustats, rangs de Q disponibles i errors observats en punts de referència. Amb
+aquesta informació, els generadors de Q-map poden aproximar decisions de qualitat
+de forma ràpida. Els capítols de metodologia i resultats expliquen després com
+s'ha utilitzat aquesta eina i fins a quin punt els Q-maps generats mantenen la
+qualitat prevista quan s'apliquen al còdec real.
+
+Com a eina auxiliar, la taula permet als generadors de Q-map fer tres operacions:
+
+\begin{itemize}[leftmargin=*]
+  \item convertir un objectiu global de qualitat en una Q constant;
+  \item construir una base variable mantenint una mitjana controlada;
+  \item assignar valors fixos de Q a ROI i fons quan la política ho requereix.
+\end{itemize}
+
+Si es canvien pesos, nombre de bandes, normalització o escala de lambda, aquesta
+taula auxiliar ha de revisar-se. Altrament, el Q-map continuaria sent
+sintàcticament vàlid, però podria deixar de representar la qualitat prevista. En
+canvi, la ruta amb error mesurat torna a obtenir el MSE base amb el còdec i és la
+que fixa la interpretació física del càlcul de $\lambda$/Q.
+
+\section{Rang de Q}\label{sec:qrange}
+
+El Q-map es desa com un enter sense signe de 8 bits. Per construcció, això
+permet:
+
+\begin{equation}
+0\leq Q\leq255.
+\end{equation}
+
+El valor alt de Q representa més qualitat i el valor baix representa més
+degradació. La configuració principal d'aquesta memòria utilitza:
+
+\begin{equation}
+128\leq Q\leq255.
+\end{equation}
+
+Aquest interval no és una propietat física universal del model. És el rang que
+s'utilitza com a base de treball per mantenir el control de qualitat dins la
+zona més estudiada de la calibració. Per sota de Q128 el format continua sent
+representable i pot ser útil quan es vol degradar més agressivament el fons.
+Tanmateix, aquesta extensió requereix una anàlisi pròpia perquè poden aparèixer
+tres efectes:
+
+\begin{itemize}[leftmargin=*]
+  \item la relació entre Q i error pot dependre més del contingut concret del
+  bloc;
+  \item un objectiu de PSNR pot saturar al límit de la taula i quedar més lluny
+  del valor demanat;
+  \item la degradació pot afectar visualment zones properes per l'efecte de
+  veïnatge de les convolucions.
+\end{itemize}
+
+Per tant, la memòria separa la configuració principal, basada en Q128--Q255, de
+les proves amb Q més baixes que s'analitzen més endavant com a línia de recerca.
+
+\section{Modes de Q-map}\label{sec:modes}
+
+Un mode de Q-map és una regla que omple les 1.024 posicions de la graella
+latent. La Taula~\ref{tab:modes} resumeix els modes que estructuren la memòria.
+Els modes auxiliars de desenvolupament queden fora del cos principal perquè no
+són necessaris per entendre la comparació final.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabularx}{\textwidth}{p{2.5cm}p{3.2cm}X p{2.5cm}}
+\toprule
+Mode & Tipus de decisió & Q resultant & Paper dins la memòria \\
+\midrule
+\code{q204} & Qualitat uniforme explícita & Tots els blocs reben Q=204. &
+Referència uniforme principal. \\
+\code{global\_target} & Objectiu global de MSE o PSNR & Tots els blocs reben el
+mateix Q deduït de la calibració. & Connexió directa amb qualitat fixa. \\
+\code{adaptive\_s8} & Dificultat relativa per bloc & Q variable amb mitjana
+propera a 204. & Control tècnic sense ROI. \\
+\code{focus\_bgq128} & Màscara ROI i fons degradat & ROI amb base adaptativa
+reforçada; fons a Q128. & Política principal de redistribució espacial. \\
+\code{preserve-roi} & Màscara ROI i Q explícita & ROI a Q alta fixa; fons a
+Q128. & Política orientada a conservar més la ROI. \\
+\bottomrule
+\end{tabularx}
+\caption{Modes de Q-map utilitzats a la memòria. La taula descriu la regla de
+construcció, no els resultats obtinguts.}
+\label{tab:modes}
+\end{table}
+
+\subsection{q204 i global-target}
+
+\code{q204} assigna el mateix valor a tots els blocs:
+
+\begin{equation}
+Q_i=204\quad\forall i.
+\end{equation}
+
+És una ordre simple: es demana explícitament Q=204 i no es calcula cap objectiu
+d'error. Per això és una referència fàcil d'interpretar.
+
+\code{global\_target} també genera un mapa constant, però l'ordre d'usuari és
+diferent. En lloc de donar Q directament, es dona un objectiu de MSE o PSNR i la
+calibració en dedueix el valor:
+
+\begin{equation}
+Q_i=Q^\star(\mathrm{target})\quad\forall i.
+\end{equation}
+
+Els dos modes poden donar el mateix Q si l'objectiu condueix a 204, però no
+responen a la mateixa pregunta. \code{q204} pregunta \emph{què passa amb aquesta
+Q fixa?}; \code{global\_target} pregunta \emph{quina Q necessito per aquest
+objectiu global?}
+
+\subsection{adaptive-s8}
+
+\code{adaptive\_s8} no detecta classes físiques ni regions semàntiques. Només
+redistribueix Q segons la dificultat relativa del bloc. En la ruta amb error
+mesurat, aquesta dificultat surt del MSE base obtingut amb la passada de
+compressió i descompressió de referència. En les campanyes comparatives de la
+memòria, el mateix valor es reutilitza des de la taula auxiliar de calibració per
+evitar repetir la mesura per cada variant.
+
+Per convertir aquest error en una dificultat relativa es treballa en escala
+logarítmica:
+
+\begin{equation}
+z_i=
+\frac{\log(\mathrm{MSE}_i)-\mu_{\log\mathrm{MSE}}}
+{\sigma_{\log\mathrm{MSE}}}.
+\end{equation}
+
+Aquí $\mu_{\log\mathrm{MSE}}$ i $\sigma_{\log\mathrm{MSE}}$ normalitzen els errors
+de la mateixa imatge o del mateix cas calibrat. Per tant, $z_i$ no diu si un bloc
+és difícil de manera universal ni analitza semàntica; diu si aquell bloc té més
+o menys error que la mitjana del cas. Això és útil perquè manté una Q mitjana
+controlada mentre redistribueix qualitat. La limitació és que \code{adaptive\_s8}
+per si sol no sap on hi ha vegetació, núvols o aigua: és una base de qualitat, no
+un preset.
+
+La regla utilitzada és:
+
+\begin{equation}
+Q_i=\operatorname{clip}(204+8z_i).
+\label{eq:adaptive_s8}
+\end{equation}
+
+La funció $\operatorname{clip}$ limita el valor calculat perquè quedi dins del
+rang de Q permès. El centre 204 prové de la referència històrica del projecte i
+el factor 8 controla la intensitat de la variació. Amb un factor petit, el mapa
+s'assembla molt a una Q constant; amb un factor gran, molts blocs poden saturar
+als límits.
+
+Dit d'una altra manera, \code{adaptive\_s8} és viable a bord perquè és una regla
+de consulta i normalització sobre una taula ja disponible. No és un detector de
+ROI i no substitueix els presets automàtics que es defineixen més avall.
+
+\subsection{focus-bgq128}
+
+\code{focus\_bgq128} és la primera política que combina les dues peces: una base
+adaptativa i una màscara ROI. La màscara $m_i$ la proporciona un preset; $m_i=1$
+indica ROI i $m_i=0$ indica fons. La base $Q_{\mathrm{adaptive},i}$ és el valor
+que hauria produït \code{adaptive\_s8} per aquell bloc. La regla és:
+
+\begin{equation}
+Q_i=
+\begin{cases}
+  \operatorname{clip}(Q_{\mathrm{adaptive},i}+16),&m_i=1,\\
+128,&m_i=0.
+\end{cases}
+\label{eq:focus}
+\end{equation}
+
+La ROI no rep una Q fixa. Cada bloc ROI conserva la variació de la base
+adaptativa i rep un increment de 16 unitats de Q. Això vol dir que dos blocs dins
+la mateixa ROI poden acabar amb Q diferents si la seva dificultat calibrada era
+diferent. El fons, en canvi, deixa de seguir la base adaptativa i queda fixat a
+Q128.
+
+Així, \code{adaptive\_s8} i els presets no són alternatives incompatibles.
+\code{adaptive\_s8} tot sol és un mode sense ROI; \code{preset + focus\_bgq128}
+és una combinació on el preset decideix quins blocs són ROI i la política
+\code{focus\_bgq128} utilitza \code{adaptive\_s8} només com a base per a aquests
+blocs ROI. El compressor final no veu aquesta descomposició: només rep el Q-map
+ja calculat.
+
+\subsection{preserve-roi}
+
+\code{preserve-roi} utilitza la mateixa idea de màscara, però canvia la regla
+d'assignació dins la ROI:
+
+\begin{equation}
+Q_i=
+\begin{cases}
+Q_{\mathrm{ROI}},&m_i=1,\\
+Q_{\mathrm{fons}},&m_i=0,
+\end{cases}
+\quad
+Q_{\mathrm{ROI}}\in\{240,255\},\quad Q_{\mathrm{fons}}=128.
+\label{eq:preserve}
+\end{equation}
+
+La diferència essencial és que \code{focus\_bgq128} manté una ROI adaptativa,
+mentre que \code{preserve-roi} imposa el mateix Q alt a tots els blocs ROI. Si
+la prioritat és protegir qualsevol bloc marcat com a ROI, \code{preserve-roi}
+és més conservador. Si la prioritat és evitar donar qualitat alta a blocs ROI
+que no la necessiten tant, \code{focus\_bgq128} és més selectiu.
+
+\section{Presets automàtics}\label{sec:presets}
+
+Un preset és una regla lleugera que transforma la imatge en una màscara ROI. No
+és una xarxa neuronal ni una classificació supervisada completa. Calcula una
+magnitud per píxel o per bloc, la compara amb un llindar i marca els blocs que
+compleixen el criteri. La Taula~\ref{tab:index_presets} presenta tots els
+presets considerats abans d'entrar en les famílies de càlcul.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}p{2.5cm}p{2.0cm}X}
+\toprule
+Preset & Magnitud & Llindar & Lectura de la màscara ROI \\
+\midrule
+\code{vegetation} & NDVI B08/B04 & $\geq0,40$ & Blocs amb resposta de
+vegetació moderada o alta. \\
+\code{high\_ndvi} & NDVI B08/B04 & $\geq0,50$ & Blocs amb resposta NDVI més
+restrictiva. \\
+\code{low\_ndvi} & NDVI B08/B04 & $\leq0,15$ & Blocs amb NDVI baix; pot incloure
+sòl, cobertes no vegetades o valors negatius. \\
+\code{vegetation\_green} & GNDVI B08/B03 & $\geq0,50$ & Blocs amb vegetació
+contrastada amb la banda verda. \\
+\code{chlorophyll} & NDCI B05/B04 & $\geq0,10$ & Blocs amb resposta associada a
+clorofil·la segons les bandes disponibles. \\
+\code{water\_body} & NDWI B03/B08 & $\geq0,10$ & Blocs compatibles amb presència
+d'aigua segons l'índex utilitzat. \\
+\code{dark\_regions} & Mitjana visible & $\leq0,26$ & Blocs foscos en les bandes
+visibles. \\
+\code{local\_contrast} & Desviació visible & $\geq0,035$ & Blocs amb variació
+visible alta. \\
+\code{clouds} & Fracció CBY & $\geq0,50$ & Blocs amb alta fracció de píxels
+candidats a núvol. \\
+\code{cloud\_avoid} & Fracció CBY & $\leq0,50$ & Blocs que eviten la màscara de
+núvol segons el detector disponible. \\
+\bottomrule
+\end{tabularx}
+\caption{Presets automàtics considerats. Els llindars són paràmetres de treball
+per generar màscares ROI; no són constants universals de teledetecció.}
+\label{tab:index_presets}
+\end{table}
+
+\subsection{Índexs espectrals normalitzats}
+
+Els presets basats en dues bandes utilitzen una forma normalitzada:
+
+\begin{equation}
+I(A,B)=\frac{A-B}{A+B}.
+\label{eq:index}
+\end{equation}
+
+El valor es calcula per píxel vàlid i després es resumeix dins cada bloc. NDVI i
+NDWI tenen fonament bibliogràfic \cite{rouse1974ndvi,mcfeeters1996ndwi}, però
+els valors de llindar depenen de l'escena, la resposta radiomètrica i les bandes
+disponibles. Per això, en aquesta memòria el llindar s'ha de llegir com una
+decisió de configuració, no com una definició física tancada.
+
+Aquesta precaució és especialment important en \code{low\_ndvi}. En NDVI,
+valors positius elevats solen associar-se a vegetació activa; valors propers a
+zero poden correspondre a sòl nu o cobertes urbanes; i valors negatius poden
+aparèixer en aigua, ombres o superfícies amb baixa resposta NIR. Per tant,
+\code{low\_ndvi} no s'interpreta com un detector urbà pur, sinó com un preset
+ampli de resposta NDVI baixa que s'ha d'avaluar amb les màscares i resultats del
+dataset.
+
+\subsection{Contrast i brillantor visible}
+
+Els presets visibles treballen amb les bandes B02, B03 i B04. Es calcula una
+mitjana visible normalitzada:
+
+\begin{equation}
+V=\frac{B02+B03+B04}{3\cdot10000}.
+\end{equation}
+
+\code{dark\_regions} marca blocs amb valor visible mitjà baix.
+\code{local\_contrast} marca blocs amb desviació estàndard visible alta. Aquests
+criteris no identifiquen una classe física única; només defineixen una regió
+d'interès segons brillantor o textura.
+
+\subsection{Núvol i no-núvol amb les bandes disponibles}
+
+El detector CBY bàsic utilitza bandes visibles:
+
+\begin{align}
+bRatio&=\frac{B03-0,175}{0,39-0,175},\\
+NDGR&=\frac{B03-B04}{B03+B04}.
+\end{align}
+
+Un píxel és candidat a núvol si $bRatio>1$ o si $bRatio>0$ i $NDGR>0$. El valor
+del bloc és la fracció de píxels candidats. Si B11/SWIR fos disponible es podria
+afegir una condició espectral més informativa; amb el conjunt de vuit bandes
+utilitzat en aquesta memòria s'aplica la versió visible. Això limita la lectura
+física del preset, però no impedeix utilitzar-lo com a detector automàtic de
+regions per construir Q-maps.
+
+\section{Llindars i cobertura ROI}\label{sec:llindars}
+
+Un llindar converteix una magnitud contínua en una màscara binària. Per cada
+bloc $i$ es calcula un valor $s_i$ i s'aplica una regla del tipus:
+
+\begin{equation}
+m_i =
+\begin{cases}
+1,&s_i \geq \tau,\\
+0,&s_i < \tau.
+\end{cases}
+\end{equation}
+
+En alguns presets la desigualtat s'inverteix, com en el cas de NDVI baix o
+regions fosques. El punt important és que el llindar no controla directament la
+qualitat: només controla quins blocs entren a la ROI. La qualitat final depèn de
+la política aplicada després.
+
+La cobertura de ROI és el percentatge de blocs amb $m_i=1$:
+
+\begin{equation}
+C = 100\frac{\sum_i m_i}{1024}.
+\end{equation}
+
+Per interpretar aquesta cobertura s'utilitza la nomenclatura següent:
+
+\begin{equation}
+\begin{array}{ll}
+\code{no\_roi}:&C=0\%,\\
+\code{low\_roi}:&0<C<10\%,\\
+\code{mid\_roi}:&10\%\leq C\leq70\%,\\
+\code{high\_roi}:&70\%<C<100\%,\\
+\code{all\_roi}:&C=100\%.
+\end{array}
+\label{eq:roi_groups_control}
+\end{equation}
+
+Aquestes etiquetes no són presets i no modifiquen cap Q-map. Són categories
+d'anàlisi que ajuden a detectar casos límit. Si la ROI és buida, no hi ha regió
+protegida. Si és total, no queda fons amb el qual redistribuir qualitat. Si és
+molt petita o molt dispersa, el camp receptiu de la xarxa pot barrejar informació
+amb blocs veïns i fer que la protecció sigui menys efectiva.
+
+\section{Combinació preset + política}\label{sec:control_decision}
+
+El sistema complet es pot llegir com una composició:
+
+\begin{equation}
+\text{preset}
+\;+\;
+\text{política}
+\;\longrightarrow\;
+\text{Q-map}.
+\end{equation}
+
+El preset només decideix quins blocs són ROI. La política només decideix quina Q
+rep la ROI i quina Q rep el fons. El Q-map és l'únic objecte que consumeixen
+compressor i descompressor. Aquesta separació permet comparar combinacions sense
+canviar el model neuronal.
+
+Per exemple, si un preset marca una zona central com a ROI, \code{focus\_bgq128}
+donarà a aquesta zona una qualitat adaptativa reforçada i fixarà la resta a
+Q128. Amb la mateixa màscara, \code{preserve-roi} donaria una Q alta uniforme a
+tota la zona central i també fixaria el fons a Q128. El detector no canvia; el
+que canvia és la política de qualitat.
+
+\subsection{Traçabilitat de la implementació C}\label{sec:interface_c}
+
+La implementació C reflecteix aquesta separació. Les eines de generació de Q-map
+produeixen un fitxer binari de 1.024 bytes i un resum per bloc amb el valor del
+preset, la decisió ROI/fons, la Q base i la Q final. El cos principal de la
+memòria només necessita aquesta idea. Els noms exactes de paràmetres, ordres de
+reproducció i fitxers de sortida es recullen als apèndixs i al repositori per no
+interrompre el fil conceptual del capítol.
+
+\subsection{Modes auxiliars}\label{sec:auxiliary_modes}
+
+Durant el desenvolupament també es van implementar polítiques auxiliars, com
+incrementar Q dins la ROI sense fixar el fons, o calcular un objectiu explícit
+de qualitat només per la ROI. Aquestes variants són útils per depurar i entendre
+el sistema, però la memòria es centra en les combinacions que responen a les
+preguntes principals: qualitat uniforme, redistribució adaptativa, ROI protegida
+amb fons degradat i ROI preservada amb Q alta.
