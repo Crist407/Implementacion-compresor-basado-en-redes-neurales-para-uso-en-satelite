@@ -1,24 +1,20 @@
-claim_id,chapter,claim,unit,population,baseline,value,source
-E01,4,Latents coincidents amb la referencia Python,percent,una imatge del treball previ,Python,99.9876,docs/informes/Entrega Final.tex
-E02,4,RSS del compressor C inicial,MiB,una execucio Raspberry del treball previ,Python,87,docs/informes/Entrega Final.tex
-E03,5,Nombre de blocs del Q-map,blocs,imatge 512x512 amb blocs 16x16,n/a,1024,src/c/semantic_qmap.c
-E04,5,Lambda maxima de la calibracio actual,lambda,calibracio lambda005,anterior 0.125,0.05,output/checkpoints/20260613_lambda005_recalibration_audit
-E04b,7,PSNR maxim global canonical amb global_target,dB,Q128-Q255 lambda005,Q255,74.52,output/checkpoints/20260613_lambda005_recalibration_audit/global_calibrations/canonical_global_q_quality.tsv
-E05,6,Retalls del full C-only,crops,dataset principal,n/a,120,output/checkpoints/20260619_lambda005_semantic_presets_full_auto_modes/checkpoint_summary.json
-E06,6,Registres principals del full C-only,files de resultats,10 presets x 120 crops x 4 politiques,n/a,4800,output/checkpoints/20260619_lambda005_semantic_presets_full_auto_modes/semantic_preset_dataset_results.csv
-E07,6,Fallades del full C-only,casos,full de 120 crops,n/a,0,output/checkpoints/20260619_lambda005_semantic_presets_full_auto_modes/checkpoint_summary.json
-E08,7,Subcasos CSMR principals completats,subcasos,20 crops x 3 politiques,n/a,60,output/checkpoints/20260623_lambda005_csmr_selected_cases_bitrate_final
-E09,7,Coincidencia L igual Q,subcasos,CSMR principal,n/a,60/60,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
-E10,7,Bitrate mitja q204,bps,20 crops CSMR,q204,4.06018,output/checkpoints/20260624_lambda005_final_evidence_pack/final_csmr_policy_summary.csv
-E11,7,Bitrate mitja focus_bgq128,bps,20 crops CSMR,q204,3.70126,output/checkpoints/20260624_lambda005_final_evidence_pack/final_csmr_policy_summary.csv
-E12,7,Estalvi focus_bgq128 respecte q204,percent,20 crops CSMR,q204,8.84,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
-E13,7,Delta PSNR ROI focus respecte adaptive,dB,20 crops CSMR,adaptive_s8,0.2137,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
-E14,7,Delta PSNR fons focus respecte adaptive,dB,20 crops CSMR,adaptive_s8,-2.2296,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
-E15,7,Subcasos CSMR experimentals completats,subcasos,4 presets experimentals,n/a,30,output/checkpoints/20260626_lambda005_csmr_experimental_threshold_modes
-E16,7,Subcasos preserve-roi completats,subcasos,auditoria preserve-roi,n/a,78,output/checkpoints/20260628_lambda005_csmr_preserve_roi_policy
-E17,8,Acceleracio total mitjana C optimitzat,factor,66 parelles Raspberry a 4 fils,baseline Raspberry,1.205,output/checkpoints/20260614_raspberry_lambda005_optimization_comparison/raspberry_optimization_speedup.csv
-E18,8,Fallades de paritat optimitzacio,casos,66 parelles Raspberry,baseline Raspberry,0,output/checkpoints/20260614_raspberry_lambda005_optimization_comparison/raspberry_optimization_quality_parity.csv
-E19,8,Temps mitja de tots els generadors Q-map,s,198 execucions,n/a,0.104,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_summary.json
-E20,8,Temps mitja de presets semantics,s,162 execucions semantiques,n/a,0.113,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_by_type.csv
-E21,8,Cost Q-map respecte compressio,percent,198 comparacions,compressor C 4 fils,0.040,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_summary.json
-E22,8,Cost Q-map respecte compressio i descompressio,percent,198 comparacions,pipeline C 4 fils,0.022,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_summary.json
+id,capitol,afirmacio,valor,unitat,poblacio,baseline,font_publica,origen_arxivat
+E01,5,Mida del Q-map aplicat pel codec,1024,bytes_celles,imatge 512x512,n/a,docs/informe_final/Chapter5/text_ch5.tex; src/c/semantic_qmap.c,n/a
+E02,5,Valor maxim de escala actual,0.05,lambda,calibracio lambda005,escala anterior 0.125,docs/informe_final/Chapter5/text_ch5.tex; config/fq_calibration_lambda005.tsv,output/checkpoints/20260613_lambda005_recalibration_audit
+E03,6,Full C-only completat,120 retalls; 4800 registres; 0 fallades,diverses,10 presets x 120 retalls x 4 politiques,n/a,docs/informe_final/evidence/key_metrics_summary.csv,output/checkpoints/20260619_lambda005_semantic_presets_full_auto_modes
+E04,7,CSMR principal i transport Q-map,60/60 subcasos; 60/60 L igual Q,subcasos,20 retalls x 3 politiques,n/a,docs/informe_final/evidence/key_metrics_summary.csv; docs/informe_final/evidence/csmr_policy_summary.csv,output/checkpoints/20260623_lambda005_csmr_selected_cases_bitrate_final; output/checkpoints/20260624_lambda005_final_evidence_pack
+E05,7,Bitrate mitja de q204,4.06018,bps,20 retalls CSMR,q204,docs/informe_final/evidence/csmr_policy_summary.csv,output/checkpoints/20260624_lambda005_final_evidence_pack/final_csmr_policy_summary.csv
+E06,7,Bitrate mitja de focus_bgq128,3.70126,bps,20 retalls CSMR,q204,docs/informe_final/evidence/csmr_policy_summary.csv,output/checkpoints/20260624_lambda005_final_evidence_pack/final_csmr_policy_summary.csv
+E07,7,Estalvi de focus_bgq128 respecte q204,8.84,percent,20 retalls CSMR,q204,docs/informe_final/evidence/key_metrics_summary.csv; docs/informe_final/evidence/csmr_policy_summary.csv,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+E08,7,Delta PSNR ROI i fons de focus_bgq128 respecte q204,+0.203 ROI; -2.204 fons,dB,20 retalls CSMR amb mascara comuna,q204,docs/informe_final/evidence/q204_same_mask_summary.csv,output/checkpoints/20260631_lambda005_report_reframed_evidence/q204_referenced_csmr_summary.csv
+E09,7,Delta PSNR ROI i fons de focus_bgq128 respecte adaptive_s8,+0.2137 ROI; -2.2296 fons,dB,20 retalls CSMR,adaptive_s8,docs/informe_final/evidence/key_metrics_summary.csv,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+E10,7,Limit global_target canonical,74.52,dB,corba Q128-Q255,Q255,docs/informe_final/evidence/global_target_canonical_curve.csv,output/checkpoints/20260613_lambda005_recalibration_audit/global_calibrations/canonical_global_q_quality.tsv
+E11,7,Modes experimentals completats,30/30,subcasos,quatre modes experimentals,q204,docs/informe_final/evidence/experimental_and_preserve_summary.csv,output/checkpoints/20260626_lambda005_csmr_experimental_threshold_modes
+E12,7,Auditoria preserve-roi completada,78,subcasos,politiques preserve,q204,docs/informe_final/evidence/experimental_and_preserve_summary.csv,output/checkpoints/20260628_lambda005_csmr_preserve_roi_policy
+E13,8,Speedup total mitja del C optimitzat,1.205,factor,66 parelles Raspberry a 4 fils,versio baseline,docs/informe_final/evidence/raspberry_operational_costs.csv,output/checkpoints/20260614_raspberry_lambda005_optimization_comparison/raspberry_optimization_speedup.csv
+E14,8,Fallades de paritat funcional,0,casos,66 parelles Raspberry,versio baseline,docs/informe_final/evidence/raspberry_operational_costs.csv,output/checkpoints/20260614_raspberry_lambda005_optimization_comparison/raspberry_optimization_quality_parity.csv
+E15,8,Temps mitja de Q-map semantic,0.113,s,162 execucions semantiques,n/a,docs/informe_final/evidence/qmap_cost_by_type.csv,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_by_type.csv
+E16,8,Cost Q-map semantic respecte compressio,0.043,percent,162 execucions semantiques,compressor C optimitzat,docs/informe_final/evidence/qmap_cost_by_type.csv,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_by_type.csv
+E17,8,Temps mitja de compressio optimitzada,261.32,s_per_retall,Raspberry 4 fils,n/a,docs/informe_final/evidence/raspberry_operational_costs.csv,output/checkpoints/20260614_raspberry_lambda005_optimized_benchmark_report
+E18,8,Temps mitja de compressor mes descompressor,468.13,s_per_retall,Raspberry 4 fils,n/a,docs/informe_final/evidence/raspberry_operational_costs.csv,output/checkpoints/20260614_raspberry_lambda005_optimized_benchmark_report
+E19,8,Ruta amb error mesurat i compressio final,729.6,s_per_retall,Raspberry 4 fils,ruta amb Q-map ja decidit,docs/informe_final/evidence/raspberry_operational_costs.csv,calculated_from_E15_E17_E18

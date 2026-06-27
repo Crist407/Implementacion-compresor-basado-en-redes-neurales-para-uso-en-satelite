@@ -1,0 +1,4 @@
+policy,runs,tfci_bps_mean,global_psnr_mean,roi_psnr_mean,background_psnr_mean,compress_s_mean,decompress_s_mean,packed_l_matches_pct,archived_origin
+q204,20,4.0601812362670895,74.27202823028836,,74.27202823028836,9.578570384749764,9.593566401699718,100.0,output/checkpoints/20260624_lambda005_final_evidence_pack/final_csmr_policy_summary.csv
+adaptive_s8,20,4.063358879089355,74.29103082836676,,74.29103082836676,9.666756980500214,9.685746606699832,100.0,output/checkpoints/20260624_lambda005_final_evidence_pack/final_csmr_policy_summary.csv
+focus_bgq128,20,3.7012649536132813,72.36885827000494,74.43936673573663,72.09746538836559,9.703597549748883,9.59300529805041,100.0,output/checkpoints/20260624_lambda005_final_evidence_pack/final_csmr_policy_summary.csv

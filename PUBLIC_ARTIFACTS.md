@@ -20,6 +20,8 @@ is not intended to store the complete local experimental workspace.
   experiments.
 - `data/README.md`: RAW format and visualization instructions.
 - `docs/informe_final/`: final report sources, figures and bibliography.
+- `docs/informe_final/evidence/`: lightweight public CSV extracts that support
+  the key numerical claims in the report.
 - `requirements.txt`, `Makefile`, `README.md` and this manifest.
 
 ## Excluded from Git
@@ -39,6 +41,11 @@ tens of gigabytes. The report records the checkpoint names associated with each
 result. When a large artifact is needed, regenerate it with the scripts in
 `src/python/analysis/` and `scripts/raspberry/`, or restore it under
 `output/checkpoints/` from the archived experimental storage.
+
+The public replacement for opening full checkpoints is
+`docs/informe_final/evidence/`. These CSV files contain the aggregated values
+used by the report, plus an `archived_origin` column that points to the original
+local checkpoint or summary file.
 
 The RAW dataset is versioned directly in Git because each file is approximately
 4 MiB and remains below GitHub's per-file hard limit. The complete dataset adds

@@ -1,0 +1,8 @@
+metric,value,unit,interpretation,archived_origin
+crops_seen,120,retalls,Full C-only principal,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+result_rows,4800,registres,10 presets x 120 retalls x 4 politiques,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+focus_reduction_vs_q204_pct,8.839907919573413,percent,Estalvi agregat calculat com 100*(1-focus_bps/q204_bps),output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+packed_l_matches,60,subcasos,Coincidencia L igual Q en CSMR principal,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+csmr_rows,60,subcasos,20 retalls x 3 politiques,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+focus_roi_delta_vs_adaptive,0.21367730875626947,dB,Control secundari contra adaptive_s8,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv
+focus_background_delta_vs_adaptive,-2.2295520635711163,dB,Control secundari contra adaptive_s8,output/checkpoints/20260624_lambda005_final_evidence_pack/final_key_metrics.csv

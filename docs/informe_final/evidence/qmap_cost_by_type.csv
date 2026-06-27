@@ -1,0 +1,4 @@
+command_type,runs,matched_pipeline_runs,qmap_elapsed_mean_s,qmap_elapsed_median_s,qmap_elapsed_p95_s,qmap_pct_of_compress_mean,qmap_pct_of_total_mean,qmap_max_rss_mean_kb,qmap_cpu_pct_mean,cost_bucket,archived_origin
+fq_adaptive,18,18,0.06666666666666671,0.07,0.07,0.025494285805961896,0.014233895367789663,1614.0,97.83333333333333,negligible,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_by_type.csv
+fq_q204,18,18,0.06555555555555559,0.07,0.07,0.025090451782350767,0.014007055773720876,1580.4444444444443,97.66666666666667,negligible,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_by_type.csv
+semantic,162,162,0.11259259259259241,0.11,0.12,0.043087572725812526,0.02405235970343589,5459.135802469136,97.9074074074074,negligible,output/checkpoints/20260701_raspberry_lambda005_qmap_cost_report/raspberry_qmap_cost_by_type.csv

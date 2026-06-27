@@ -1,220 +1,292 @@
 % !TEX root = ../main.tex
-\chapter{Registre d'evidències}\label{app:evidence}
-\fancyhead[RE]{\slshape \textsf{Apèndix \thechapter.\ Evidències}}
-\fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
+\chapter{Registre d'evidències}
+\label{app:evidence}
 
-\section*{Pendent de fer}
-\iffalse
+Aquest apèndix serveix per seguir les xifres principals de la memòria. No és
+una guia d'execució, perquè les comandes es documenten a
+l'Apèndix~\ref{app:reproducibility}. Tampoc és un manual de modes i llindars,
+perquè aquesta funció correspon a l'Apèndix~\ref{app:config}. La seva lectura
+és més simple: per cada resultat important s'indica què s'afirma, sobre quina
+població s'ha calculat, contra quin baseline es compara i quin material públic
+permet localitzar-lo dins el repositori.
 
-\section{Objectiu del registre}
+Els checkpoints complets no es publiquen a Git perquè ocupen desenes de
+gigabytes i contenen sortides intermèdies. Per això aquest apèndix no presenta
+els checkpoints com a fitxers que el lector hagi d'obrir. El registre públic és
+\path{docs/informe_final/evidence_registry.csv}; aquest fitxer conté les mateixes
+xifres que la taula editorial i afegeix, en una columna separada, l'origen
+arxivat de cada resultat. A més, el directori
+\path{docs/informe_final/evidence/} conté extractes CSV petits amb les dades
+agregades principals. Si es vol regenerar un resultat, la ruta pràctica és
+executar els scripts indicats a l'Apèndix~\ref{app:reproducibility}, no buscar
+un checkpoint dins del repositori.
 
-Cada afirmació quantitativa de la memòria s'associa a una població, una unitat,
-un baseline i un checkpoint. El fitxer font llegible per màquina és
-\code{docs/informe\_final/evidence\_registry.csv}. Aquest apèndix en presenta la
-versió editorial.
+\section{Material públic disponible}
 
-La traçabilitat evita tres errors:
+La Taula~\ref{tab:evidence_public_material} resumeix què pot consultar un
+lector directament al repositori. Aquesta taula no és un cens de resultats, sinó
+una llegenda de disponibilitat: explica quines fonts són públiques i quin paper
+tenen. La Taula~\ref{tab:evidence_public_extracts} detalla els extractes CSV
+que substitueixen, en la versió pública, la consulta directa dels checkpoints
+complets.
 
-\begin{itemize}[leftmargin=*]
-  \item barrejar proxies C-only amb bitrate real CSMR;
-  \item comparar mitjanes obtingudes sobre poblacions diferents sense indicar
-  el nombre de casos;
-  \item reutilitzar una xifra de l'escala $\lambda_{max}=0,125$ com si fos de
-  la calibració actual $\lambda_{max}=0,05$.
-\end{itemize}
-
-\section{Checkpoints principals}
-
-\begin{longtable}{p{4.2cm}p{9.8cm}}
-\caption{Procedència dels blocs d'evidència principals.}\label{tab:checkpoints}\\
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.4cm}X}
 \toprule
-Checkpoint & Contingut utilitzat \\
+Material públic & Què permet comprovar \\
 \midrule
-\endfirsthead
-\toprule
-Checkpoint & Contingut utilitzat \\
-\midrule
-\endhead
-\path{20260613_lambda005_recalibration_audit} &
-Calibracions Q--MSE i Q--PSNR per a $\lambda_{max}=0,05$, incloent la corba
-canonical utilitzada per \code{global\_target}. \\
-\path{20260619_lambda005_semantic_presets_full_auto_modes} &
-Full C-only de 120 retalls, 10 presets i 4 polítiques; resultats per bloc,
-resums i proxies latents. \\
-\path{20260622_lambda005_full_analysis_report} &
-Anàlisi derivada del full, casos bons, límit i candidats CSMR. \\
-\path{20260623_lambda005_csmr_selected_cases_bitrate_final} &
-CSMR principal: 20 retalls i 60 subcasos amb Q204, adaptive-s8 i focus. \\
-\path{20260624_lambda005_final_evidence_pack} &
-Resums consolidats de bitrate, PSNR i deltes respecte dels controls. \\
-\path{20260625_lambda005_threshold_optimization} &
-Barratge C-only de thresholds automàtics. \\
-\path{20260626_lambda005_csmr_experimental_threshold_modes} &
-CSMR de high-NDVI, low-NDVI, dark-regions i water-body. \\
-\path{20260627_lambda005_preserve_roi_policy_audit} &
-Auditoria C-only de preserve-roi Q240/Q128 i Q255/Q128. \\
-\path{20260628_lambda005_csmr_preserve_roi_policy} &
-Bitrate CSMR i qualitat de preserve-roi. \\
-\path{20260631_lambda005_report_reframed_evidence} &
-Reanàlisi amb Q204 com a baseline i una mateixa màscara per ROI/fons. \\
-\path{20260613_raspberry_lambda005_benchmark_report} &
-Baseline Raspberry amb 1, 2 i 4 fils. \\
-\path{20260614_raspberry_lambda005_optimized_benchmark_report} &
-Resultats de 66 execucions del C optimitzat amb 4 fils. \\
-\path{20260614_raspberry_lambda005_optimization_comparison} &
-Emparellament baseline--optimitzat, speedups, RSS i paritat. \\
-\path{20260701_raspberry_lambda005_qmap_cost_report} &
-198 mesures de cost dels generadors de Q-map i comparació amb el còdec. \\
+\path{docs/informe_final/main.pdf} i fonts \LaTeX & Lectura completa de les
+taules, figures, fórmules i afirmacions tal com apareixen a la memòria. \\
+\path{docs/informe_final/evidence_registry.csv} & Registre tabular de les
+xifres clau, amb font pública i origen arxivat resumit. \\
+\path{docs/informe_final/evidence/} & Extractes CSV petits amb els resums de
+CSMR, \code{global\_target}, \code{preserve-roi}, modes experimentals i
+Raspberry. \\
+\path{docs/informe_final/figures/} & Figures finals incloses al cos de la
+memòria: bitrate, rate-distortion, visuals i Raspberry. \\
+\path{config/} & Configuració pública de llindars, escala \code{lambda005} i
+calibració mínima usada per reproduir exemples. \\
+\path{src/} i \path{scripts/} & Codi C, orquestradors Python i scripts de
+Raspberry necessaris per regenerar proves concretes. \\
+\path{data/Sentinel2A_crop_test/} & Retalls RAW públics per inspecció visual i
+execucions reproduïbles del pipeline. \\
 \bottomrule
-\end{longtable}
+\end{tabularx}
+\caption{Fonts públiques disponibles al repositori. Els checkpoints complets no
+formen part de Git; només s'indiquen com a origen arxivat dins el CSV.}
+\label{tab:evidence_public_material}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{4.7cm}X}
+\toprule
+Extracte públic & Xifres que permet comprovar \\
+\midrule
+\path{csmr_policy_summary.csv} & Bitrate i PSNR mitjans de
+\code{q204}, \code{adaptive\_s8} i \code{focus\_bgq128}. \\
+\path{key_metrics_summary.csv} & Validacions globals: 120 retalls,
+4.800 registres, 60/60 subcasos CSMR, 8,84\% i deltes contra
+\code{adaptive\_s8}. \\
+\path{q204_same_mask_summary.csv} & Deltes ROI/fons de
+\code{focus\_bgq128} contra \code{q204} amb la mateixa màscara. \\
+\path{global_target_canonical_curve.csv} & Corba canonical Q--PSNR usada per
+explicar el límit de \code{global\_target}. \\
+\path{experimental_and_preserve_summary.csv} & Resums dels modes experimentals
+i de les polítiques \code{preserve-roi}. \\
+\path{qmap_cost_by_type.csv} & Cost temporal de generar Q-maps per família de
+comanda en Raspberry. \\
+\path{raspberry_operational_costs.csv} & Temps agregats de compressor,
+descompressor, ruta amb error mesurat, speedup i paritat funcional. \\
+\bottomrule
+\end{tabularx}
+\caption{Extractes CSV versionats dins \code{docs/informe\_final/evidence/}.
+Cada extracte conserva una columna \code{archived\_origin} per indicar el
+checkpoint complet del qual procedeix.}
+\label{tab:evidence_public_extracts}
+\end{table}
 
 \section{Cens de xifres clau}
 
-\begin{longtable}{p{1.0cm}p{5.5cm}p{2.1cm}p{2.3cm}p{3.0cm}}
-\caption{Cens resumit d'afirmacions quantitatives.}\label{tab:claim_registry}\\
+La Taula~\ref{tab:evidence_claims} recull només les xifres que sostenen
+afirmacions rellevants del cos principal. No inclou tots els fitxers intermedis
+ni totes les variants exploratòries. La columna \emph{Font pública} apunta al
+CSV públic que conté la xifra agregada, o bé al codi/configuració quan la xifra
+és una propietat directa de la implementació. La
+columna \emph{Baseline} indica la referència de comparació: en qualitat i
+bitrate, el baseline principal és \code{q204}; \code{adaptive\_s8} només apareix
+com a control tècnic secundari.
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{p{0.65cm}p{0.65cm}p{2.6cm}p{1.1cm}p{0.85cm}p{1.95cm}p{1.55cm}>{\raggedright\arraybackslash}p{3.35cm}}
 \toprule
-ID & Afirmació & Valor & Població & Baseline \\
+ID & Cap. & Afirmació & Valor & Unitat & Població & Baseline & Font pública \\
 \midrule
 \endfirsthead
 \toprule
-ID & Afirmació & Valor & Població & Baseline \\
+ID & Cap. & Afirmació & Valor & Unitat & Població & Baseline & Font pública \\
 \midrule
 \endhead
-E01 & Coincidència de latents C--Python del treball previ & 99,9876\% &
-1 imatge & Python \\
-E02 & RSS del compressor C inicial & 87~MiB & 1 execució Raspberry & Python \\
-E03 & Blocs d'un Q-map & 1.024 & $512^2$, bloc $16^2$ & -- \\
-E04 & Lambda màxima actual & 0,05 & calibració lambda005 & 0,125 anterior \\
-E04b & PSNR màxim global canonical & 74,52~dB & Q128--Q255 lambda005 &
-Q255 \\
-E05 & Retalls del full & 120 & dataset principal & -- \\
-E06 & Registres analítics del full & 4.800 & $10\times120\times4$ & -- \\
-E07 & Fallades del full & 0 & 4.800 registres & -- \\
-E08 & Subcasos CSMR principals & 60/60 & 20 retalls & -- \\
-E09 & Coincidència $L=Q$ & 60/60 & CSMR principal & Q-map C \\
-E10 & Bitrate mitjà Q204 & 4,06018~bps & 20 retalls & Q204 \\
-E11 & Bitrate mitjà focus & 3,70126~bps & 20 retalls & Q204 \\
-E12 & Estalvi agregat focus & 8,84\% & 20 retalls & Q204 \\
-E13 & Delta ROI focus & +0,2137~dB & 20 retalls & adaptive-s8 \\
-E14 & Delta fons focus & -2,2296~dB & 20 retalls & adaptive-s8 \\
-E15 & CSMR experimental complet & 30/30 & 4 presets & -- \\
-E16 & Subcasos CSMR preserve-roi & 78 & auditoria preserve & -- \\
-E17 & Speedup total C optimitzat & 1,205$\,\times$ & 66 parelles & C baseline \\
-E18 & Fallades de paritat & 0 & 66 parelles & C baseline \\
-E19 & Temps mitjà de qualsevol Q-map & 0,104~s & 198 execucions & -- \\
-E20 & Temps mitjà de preset semàntic & 0,113~s & 162 execucions & -- \\
-E21 & Cost Q-map / compressió & 0,040\% & 198 parelles & compressor, 4 fils \\
-E22 & Cost Q-map / pipeline complet & 0,022\% & 198 parelles & comp.+decomp. \\
+E01 & 5 & Mida del Q-map aplicat pel còdec & 1.024 & B/cel. &
+imatge $512\times512$ & n/a & Cap. 5 i codi C \\
+E02 & 5 & Valor màxim de l'escala actual & 0,05 & $\lambda$ &
+calibració \code{lambda005} & escala anterior 0,125 & Cap. 5 i \path{config/} \\
+E03 & 6 & Full C-only completat & 120; 4.800; 0 & retalls; reg.; fallades &
+10 presets $\times$ 120 retalls $\times$ 4 polítiques & n/a &
+\path{key_metrics_summary.csv} \\
+E04 & 7 & CSMR principal i transport Q-map & 60/60; 60/60 & subc. &
+20 retalls $\times$ 3 polítiques & n/a & \path{key_metrics_summary.csv} \\
+E05 & 7 & Bitrate mitjà de \code{q204} & 4,06018 & bps &
+20 retalls CSMR & \code{q204} & \path{csmr_policy_summary.csv} \\
+E06 & 7 & Bitrate mitjà de \code{focus\_bgq128} & 3,70126 & bps &
+20 retalls CSMR & \code{q204} & \path{csmr_policy_summary.csv} \\
+E07 & 7 & Estalvi de \code{focus\_bgq128} & 8,84 & \% &
+20 retalls CSMR & \code{q204} & \path{key_metrics_summary.csv} \\
+E08 & 7 & Delta ROI/fons de \code{focus\_bgq128} & +0,203; -2,204 & dB &
+20 retalls amb màscara comuna & \code{q204} &
+\path{q204_same_mask_summary.csv} \\
+E09 & 7 & Delta ROI/fons com a control tècnic & +0,2137; -2,2296 & dB &
+20 retalls & adaptatiu & \path{key_metrics_summary.csv} \\
+E10 & 7 & Límit global de \code{global\_target} canonical & 74,52 & dB &
+corba Q128--Q255 & Q255 & \path{global_target_canonical_curve.csv} \\
+E11 & 7 & Modes experimentals completats & 30/30 & subc. &
+quatre modes experimentals & \code{q204} &
+\path{experimental_and_preserve_summary.csv} \\
+E12 & 7 & Auditoria \code{preserve-roi} completada & 78 & subc. &
+polítiques preserve & \code{q204} &
+\path{experimental_and_preserve_summary.csv} \\
+E13 & 8 & Speedup total mitjà del C optimitzat & 1,205 & factor &
+66 parelles Raspberry a 4 fils & versió baseline &
+\path{raspberry_operational_costs.csv} \\
+E14 & 8 & Fallades de paritat funcional & 0 & casos &
+66 parelles Raspberry & versió baseline &
+\path{raspberry_operational_costs.csv} \\
+E15 & 8 & Temps mitjà de Q-map semàntic & 0,113 & s &
+162 execucions semàntiques & n/a & \path{qmap_cost_by_type.csv} \\
+E16 & 8 & Cost del Q-map semàntic respecte compressió & 0,043 & \% &
+162 execucions semàntiques & compressor optimitzat &
+\path{qmap_cost_by_type.csv} \\
+E17 & 8 & Temps del compressor optimitzat & 261,32 & s/ret. &
+Raspberry 4 fils & n/a & \path{raspberry_operational_costs.csv} \\
+E18 & 8 & Temps de compressor i descompressor & 468,13 & s/ret. &
+Raspberry 4 fils & n/a & \path{raspberry_operational_costs.csv} \\
+E19 & 8 & Ruta amb error mesurat i compressió final & 729,6 & s/ret. &
+Raspberry 4 fils & Q-map ja decidit &
+\path{raspberry_operational_costs.csv} \\
 \bottomrule
+\caption{Cens públic de xifres clau. Els fitxers de la columna \emph{Font
+pública} es troben dins \code{docs/informe\_final/evidence/}; el registre CSV
+complet afegeix l'origen arxivat quan el resultat prové d'un checkpoint no
+versionat.}
+\label{tab:evidence_claims}
 \end{longtable}
+\endgroup
 
 \section{Criteris de càlcul}
 
-\subsection{Estalvi agregat}
+\subsection{Bitrate i estalvi}
 
-El 8,84\% principal és el quocient entre bitrates mitjans sobre els mateixos 20
-retalls:
-
-\begin{equation}
-\mathrm{estalvi}_{agregat}
-=100\left(1-\frac{\overline R_{focus}}{\overline R_{q204}}\right).
-\end{equation}
-
-No s'ha de confondre amb la mitjana no ponderada dels percentatges de cada cas,
-que pot diferir lleugerament. La memòria utilitza el quocient de mitjanes quan
-parla del resultat global i indica la població quan presenta un preset.
-
-\subsection{Bitrate}
-
-Un fitxer de $B$ bytes per una entrada de $N_b$ bandes, alçada $H$ i amplada
-$W$ té:
+El bitrate real es calcula sobre el fitxer \code{.tfci} generat per CSMR, que
+és la ruta de TensorFlow Compression associada a SORTENY. El contenidor C propi
+s'utilitza per validar compressor i descompressor, però encara no incorpora una
+codificació per entropia o aritmètica completa; per això no es fa servir com a
+mesura final de bitrate. La convenció de la memòria és:
 
 \begin{equation}
-R=\frac{8B}{N_bHW}\quad
-\left[\mathrm{bit\;px^{-1}\;band^{-1}}\right].
+\mathrm{bps} =
+\frac{8B}{N_bHW},
 \end{equation}
 
-En aquesta memòria, bps sempre significa bits per mostra espectral, equivalent
-a bit per píxel i banda. El nombre prové del fitxer CSMR \code{.tfci}, no de la
-mida del bitstream C sense coder per entropia.
+on $B$ és la mida del fitxer codificat en bytes, $N_b$ és el nombre de bandes,
+i $H,W$ són les dimensions espacials. L'estalvi relatiu contra \code{q204} és:
 
-\subsection{Deltes de ROI i fons}
+\begin{equation}
+\mathrm{estalvi} =
+100\left(1-\frac{R_{\mathrm{mode}}}{R_{\mathrm{q204}}}\right).
+\end{equation}
 
-Per una política $p$ i la màscara $m$ del seu preset:
+Per exemple, amb $R_{\mathrm{focus}}=3,70126$ bps i
+$R_{\mathrm{q204}}=4,06018$ bps, l'estalvi és $8,84\%$.
+
+\subsection{Deltes de qualitat ROI i fons}
+
+Els deltes de qualitat s'han calculat amb la mateixa màscara ROI/fons per evitar
+comparacions sobre poblacions diferents:
+
+\begin{equation}
+\Delta \mathrm{ROI} =
+\mathrm{PSNR}_{\mathrm{ROI}}(\mathrm{mode}) -
+\mathrm{PSNR}_{\mathrm{ROI}}(\mathrm{q204}),
+\end{equation}
+
+\begin{equation}
+\Delta \mathrm{fons} =
+\mathrm{PSNR}_{\mathrm{fons}}(\mathrm{mode}) -
+\mathrm{PSNR}_{\mathrm{fons}}(\mathrm{q204}).
+\end{equation}
+
+Quan s'informa un delta respecte \code{adaptive\_s8}, la lectura és secundària:
+serveix per comparar \code{focus\_bgq128} amb una redistribució adaptativa de Q
+que manté una mitjana propera a 204, no per substituir el baseline principal.
+
+\subsection{Índex C-only}
+
+El ranking C-only és una eina de cribratge i no una mètrica final. Combina
+proxies normalitzats de conservació de ROI, degradació del fons, reducció de Q
+mitjana, entropia latent, compressibilitat zlib i mida raonable de ROI:
+
+\begin{equation}
+\begin{aligned}
+I = 100(&0,27R + 0,22F + 0,16Q + 0,14H \\
+       &+ 0,11Z + 0,10S) + B.
+\end{aligned}
+\end{equation}
+
+Aquest índex només ordena candidats abans de CSMR. Les afirmacions de bitrate
+del cos principal provenen del fitxer \code{.tfci}.
+
+\subsection{Speedup i cost de Q-map}
+
+El speedup s'ha calculat com:
+
+\begin{equation}
+\mathrm{speedup}=\frac{t_{\mathrm{baseline}}}{t_{\mathrm{optimitzat}}}.
+\end{equation}
+
+El cost relatiu del Q-map semàntic respecte del compressor optimitzat és:
+
+\begin{equation}
+100\frac{0,11259}{261,32}=0,043\%.
+\end{equation}
+
+Les rutes operatives discutides al Capítol~\ref{ch:bord} utilitzen aquests
+temps mitjans:
 
 \begin{align}
-\Delta ROI_p &=
-\mathrm{PSNR}(x,\hat x_p\mid m=1)
--\mathrm{PSNR}(x,\hat x_{q204}\mid m=1),\\
-\Delta fons_p &=
-\mathrm{PSNR}(x,\hat x_p\mid m=0)
--\mathrm{PSNR}(x,\hat x_{q204}\mid m=0).
+T_{\mathrm{qmap+compressio}} &=
+0,113 + 261,32 = 261,43~\mathrm{s}, \\
+T_{\mathrm{error\ mesurat}} &=
+468,13 + 0,113 + 261,32 = 729,56~\mathrm{s}.
 \end{align}
 
-La mateixa màscara s'aplica a les dues reconstruccions. Aquesta condició és
-necessària perquè Q204 no defineix una ROI pròpia.
+La ruta amb taula precalibrada evita la passada de compressor i descompressor
+necessària per obtenir error base sempre que la calibració sigui representativa
+del sensor i de l'escena.
 
-\subsection{Índex de cribratge C-only}
+\section{Figures principals}
 
-Abans d'executar CSMR es va utilitzar un índex intern per ordenar candidats del
-full C-only:
+La Taula~\ref{tab:evidence_public_figures} connecta les figures finals amb les
+lectures quantitatives del cens. Tots aquests fitxers són públics dins
+\path{docs/informe_final/figures/}.
 
-\begin{equation}
-I=100(0,27R+0,22F+0,16Q+0,14H+0,11Z+0,10S)+B.
-\end{equation}
-
-$R$ normalitza la conservació de ROI; $F$, la degradació de fons; $Q$, la
-reducció de Q mitjana; $H$, la reducció d'entropia; $Z$, el proxy zlib; i $S$,
-la mida útil de ROI. $B$ és un bonus petit per modes prioritaris. L'índex no és
-bitrate, PSNR ni una mètrica física: només ordena candidats abans de dedicar-los
-una execució CSMR.
-
-\subsection{Speedup}
-
-\begin{equation}
-S=\frac{t_{baseline}}{t_{optimitzat}}.
-\end{equation}
-
-$S=1,205$ significa un throughput un 20,5\% superior. La reducció de latència
-corresponent és $1-1/S=17,0\%$. Les dues expressions són correctes, però no són
-el mateix percentatge.
-
-\section{Procedència de les figures}
-
-\begin{longtable}{p{5.2cm}p{8.8cm}}
-\caption{Origen de les figures derivades del Capítol~\ref{ch:resultats} i del
-Capítol~\ref{ch:bord}.}\label{tab:figure_sources}\\
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{4.0cm}X}
 \toprule
-Figura & Font \\
+Element visual & Què documenta \\
 \midrule
-\endfirsthead
-\toprule
-Figura & Font \\
-\midrule
-\endhead
-\path{global_target_lambda005_curves.png} &
-\path{global_calibrations/canonical_global_q_quality.tsv} de la recalibració
-\code{lambda005}. \\
-\path{csmr_policy_bitrate.png} &
-\code{final\_csmr\_policy\_summary.csv} del pack final. \\
-\path{csmr_savings_main_presets.png} &
-\path{preset_policy_q204_ranking.csv} del reanàlisi Q204. \\
-\path{rd_roi_q204_focus.png} i \path{rd_background_q204_focus.png} &
-\path{same_mask_roi_deltas.csv}, amb reconstruccions CSMR emparellades. \\
-\path{csmr_experimental_savings.png} &
-Resum CSMR de thresholds experimentals. \\
-\path{preserve_roi_tradeoff.png} &
-Resum CSMR preserve-roi per casos cloud-avoid compartits. \\
-\path{raspberry_speedup_by_mode.png} &
-\path{raspberry_optimization_speedup.csv}. \\
-\path{raspberry_qmap_cost.png} &
-\path{raspberry_qmap_cost_by_type.csv} i informe optimitzat. \\
-Panells de preset, màscara, Q-map i error &
-\path{report_visual_case_manifest.csv} i artefactes CSMR seleccionats. \\
+\code{global-target} & Corba Q--PSNR i saturació de
+\code{global\_target} en la calibració canonical. \\
+\code{bitrate/estalvi} & Bitrate real \code{.tfci} i estalvi
+respecte \code{q204}. \\
+\code{rate-distortion} & Diagrames rate-distortion separats per
+ROI i fons. \\
+\code{experimentals} & Modes experimentals i estalvi contra
+\code{q204}. \\
+\code{preserve-roi} & Diferència entre maximitzar estalvi i
+preservar ROI. \\
+\code{panells visuals} & Panells visuals amb original,
+màscara ROI, Q-map i error amplificat. \\
+\code{Raspberry} & Speedup del C optimitzat i cost temporal de
+generar Q-maps. \\
 \bottomrule
-\end{longtable}
-
-Les figures provenen d'aquestes fonts tabulades i no requereixen executar noves
-compressions. Són, per tant, anàlisi derivada reproduïble dels checkpoints
-tancats.
-\fi
+\end{tabularx}
+\caption{Figures públiques que donen suport visual a les xifres del cens.}
+\label{tab:evidence_public_figures}
+\end{table}
