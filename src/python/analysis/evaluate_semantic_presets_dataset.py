@@ -35,8 +35,13 @@ USEFUL_PRESETS: list[dict[str, Any]] = [
     {"preset": "vegetation", "index": "NDVI", "bands": "B08,B04", "threshold": 0.40},
     {"preset": "vegetation_green", "index": "GNDVI", "bands": "B08,B03", "threshold": 0.50},
     {"preset": "chlorophyll", "index": "NDCI", "bands": "B05,B04", "threshold": 0.10},
-    {"preset": "water_body", "index": "NDWI", "bands": "B03,B08", "threshold": 0.30},
+    {"preset": "water_body", "index": "NDWI", "bands": "B03,B08", "threshold": 0.10},
     {"preset": "clouds", "index": "CBY", "bands": "B03,B04[,B11]", "threshold": 0.50},
+    {"preset": "dark_regions", "index": "VIS_MEAN", "bands": "B02,B03,B04", "threshold": 0.26},
+    {"preset": "local_contrast", "index": "VIS_STD", "bands": "B02,B03,B04", "threshold": 0.035},
+    {"preset": "low_ndvi", "index": "NDVI", "bands": "B08,B04", "threshold": 0.15},
+    {"preset": "high_ndvi", "index": "NDVI", "bands": "B08,B04", "threshold": 0.50},
+    {"preset": "cloud_avoid", "index": "CBY_CLEAR", "bands": "B03,B04[,B11]", "threshold": 0.50},
 ]
 
 MISSING_BAND_PRESETS: list[dict[str, Any]] = [
@@ -882,6 +887,7 @@ def semantic_qmap_cmd(
     policy_args: list[str],
     *,
     band_map: Path | None = None,
+    threshold: float | None = None,
 ) -> list[str]:
     cmd = [
         executable(args.semantic_bin),
@@ -911,6 +917,8 @@ def semantic_qmap_cmd(
         cmd.extend(["--band-map", str(band_map)])
     else:
         cmd.extend(["--band-layout", "sentinel2-8"])
+    if threshold is not None:
+        cmd.extend(["--threshold", str(threshold)])
     return cmd
 
 
@@ -1387,7 +1395,7 @@ def median(values: list[float]) -> float:
 
 def summarize_groups(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    focus_kinds = {"semantic_focus", "manual_focus"}
+    focus_kinds = {"semantic_focus", "semantic_focus_threshold_sweep", "semantic_preserve_roi", "manual_focus"}
     keys = sorted({(r["preset"], r["policy"], r["roi_group"]) for r in rows if r["policy_kind"] in focus_kinds})
     for preset, policy, group in keys:
         items = [r for r in rows if r["preset"] == preset and r["policy"] == policy and r["roi_group"] == group]
@@ -1723,7 +1731,16 @@ def main() -> int:
             qmap.parent.mkdir(parents=True, exist_ok=True)
             tsv.parent.mkdir(parents=True, exist_ok=True)
             if not qmap.exists() or qmap.stat().st_size != QMAP_BYTES:
-                cmd = semantic_qmap_cmd(args, crop.path, preset, qmap, tsv, SEMANTIC_POLICIES[0]["args"], band_map=band_map)
+                cmd = semantic_qmap_cmd(
+                    args,
+                    crop.path,
+                    preset,
+                    qmap,
+                    tsv,
+                    SEMANTIC_POLICIES[0]["args"],
+                    band_map=band_map,
+                    threshold=preset_spec["threshold"],
+                )
                 run_cmd(cmd, root, logs_dir / "prescan_bgpen24" / preset / f"{crop.stem}.log")
             sem = read_semantic_tsv(tsv)
             roi_blocks = int(np.sum(sem["roi"]))
@@ -1839,7 +1856,16 @@ def main() -> int:
                     if not tsv.exists():
                         shutil.copy2(src_tsv, tsv)
                 elif not qmap.exists() or qmap.stat().st_size != QMAP_BYTES:
-                    cmd = semantic_qmap_cmd(args, crop.path, preset, qmap, tsv, policy_spec["args"], band_map=band_map)
+                    cmd = semantic_qmap_cmd(
+                        args,
+                        crop.path,
+                        preset,
+                        qmap,
+                        tsv,
+                        policy_spec["args"],
+                        band_map=band_map,
+                        threshold=preset_spec["threshold"],
+                    )
                     elapsed = run_cmd(cmd, root, logs_dir / crop.stem / policy / preset / "qmap.log")
                     command_rows.append({"crop": crop.stem, "preset": preset, "policy": policy, "command": " ".join(cmd), "elapsed_s": elapsed})
                 sem = read_semantic_tsv(tsv)

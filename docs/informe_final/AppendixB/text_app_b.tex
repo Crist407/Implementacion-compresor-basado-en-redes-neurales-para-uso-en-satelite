@@ -3,168 +3,284 @@
 \fancyhead[RE]{\slshape \textsf{Apèndix \thechapter.\ Configuració}}
 \fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
 
-\section*{Pendent de fer}
-\iffalse
+Aquest apèndix és una fitxa de configuració. Serveix per consultar els valors
+exactes que connecten la memòria amb el repositori públic: escala de Q, modes de
+qualitat, presets automàtics, llindars, etiquetes de cobertura ROI i variants
+auxiliars del codi. No és una secció de resultats ni una repetició del disseny:
+el Capítol~\ref{ch:control} explica per què es defineixen aquests modes, el
+Capítol~\ref{ch:metodologia} explica com s'avaluen i el
+Capítol~\ref{ch:resultats} presenta les mesures obtingudes.
 
-\section{Conversió entre Q i lambda}
+Les comandes de reproducció no es repeteixen aquí: són a
+l'Apèndix~\ref{app:reproducibility}. Aquest apèndix conté només els paràmetres
+que aquelles comandes consumeixen o generen. El registre de procedència de les
+xifres queda reservat a l'Apèndix~\ref{app:evidence}.
 
-La configuració \code{lambda005} utilitza:
+\section{Escala Q/lambda}
+
+La configuració principal utilitza l'escala \code{lambda005}, on el valor Q de
+8 bits es converteix a lambda mitjançant:
 
 \begin{equation}
 \lambda(Q)=\frac{Q}{255}\cdot0,05.
+\label{eq:app_q_lambda}
 \end{equation}
 
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{rrrr}
+\begin{tabularx}{\textwidth}{r r X}
 \toprule
-Q & $\lambda$ & Ús & Estat \\
+Q & $\lambda$ & Lectura dins la configuració \\
 \midrule
-64 & 0,01255 & Fons molt agressiu & Experimental \\
-96 & 0,01882 & Fons agressiu & Experimental \\
-128 & 0,02510 & Fons operatiu & Validat \\
-204 & 0,04000 & Baseline uniforme & Validat \\
-240 & 0,04706 & ROI preserve intermèdia & Validat \\
-255 & 0,05000 & Qualitat màxima de l'escala & Validat \\
+64 & 0,01255 & Valor de fons molt agressiu, reservat a proves de Q baixa. \\
+96 & 0,01882 & Valor de fons agressiu, també fora de la configuració principal. \\
+128 & 0,02510 & Mínim utilitzat per al fons en la ruta principal. \\
+204 & 0,04000 & Referència uniforme històrica i baseline principal. \\
+240 & 0,04706 & Valor alt per preservar ROI en configuracions de dos nivells. \\
+255 & 0,05000 & Valor màxim representable en l'escala actual. \\
 \bottomrule
-\end{tabular}
-\caption{Valors representatius de Q en l'escala actual.}
+\end{tabularx}
+\caption{Valors representatius de Q i lambda en l'escala \code{lambda005}.}
 \label{tab:q_lambda_appendix}
 \end{table}
 
-El tipus \code{uint8} permet Q entre 0 i 255, però el rang operatiu validat és
-128--255. Els valors inferiors no són invàlids ni perillosos per definició:
-produeixen més distorsió, com s'espera. Es mantenen experimentals perquè la
-calibració target--MSE, CSMR, evidència visual i Raspberry no s'han repetit amb
-la mateixa cobertura. L'opció \code{--allow-experimental-low-q} fa explícita
-aquesta decisió.
+El format \code{uint8} permet Q entre 0 i 255. En aquesta memòria, la ruta
+principal utilitza Q128--Q255 perquè és la zona amb més cobertura de validació.
+Els valors Q$<128$ no són invàlids: simplement impliquen una degradació més
+agressiva i es tracten com una línia experimental que requereix validació
+específica.
 
-\section{Modes i polítiques}
+\section{Modes principals}
 
-\begin{longtable}{p{2.7cm}p{3.0cm}p{8.1cm}}
-\caption{Definició funcional dels modes de Q-map.}\label{tab:all_modes}\\
+Els modes de la Taula~\ref{tab:app_main_modes} són els noms que apareixen a la
+memòria i a les rutes de reproducció. La taula fixa la regla de Q; la
+interpretació experimental es dona al cos principal.
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{p{2.3cm}p{2.5cm}p{5.4cm}p{2.1cm}}
+\caption{Modes principals de Q-map documentats a la memòria.}\label{tab:app_main_modes}\\
 \toprule
-Mode & Paràmetres clau & Regla \\
+Mode & Entrada de decisió & Regla de Q & Ús de reproducció \\
 \midrule
 \endfirsthead
 \toprule
-Mode & Paràmetres clau & Regla \\
+Mode & Entrada de decisió & Regla de Q & Ús de reproducció \\
 \midrule
 \endhead
-\code{q204} & Q=204 & Assigna Q204 als 1.024 blocs. És el baseline
-uniforme i no calcula cap target. \\
-\code{global\_target} & PSNR o MSE objectiu & Inverteix la calibració per
-obtenir un únic $Q^\star$ i l'assigna a tota la imatge. Pot coincidir amb Q204,
-però la interfície d'usuari és un objectiu de qualitat. \\
-\code{adaptive\_s8} & $\bar Q=204$, $s=8$ & Calcula dificultat relativa per
-bloc i aplica $Q_i=\operatorname{clip}(204+8z_i)$. No usa preset ni ROI. \\
-\code{boost-only} & Preset, boost & Manté la base adaptativa al fons i
-augmenta Q només als blocs ROI. \\
-\code{focus\_bgq128} & Preset, boost=16, fons=128 & La ROI rep
-$Q_{adaptive}+16$ i conserva variació interna; el fons rep Q128. \\
-\code{focus\_bgpen24} & Preset, boost=16, penalització fons=24 & Política
-auxiliar de cribratge C-only: la ROI rep boost i el fons es redueix respecte de
-la base adaptativa, sense fixar-lo a Q128. \\
-\code{target-focus} & Preset, target ROI & Selecciona Q dins la ROI a partir
-d'un objectiu MSE/PSNR i aplica el tractament de fons configurat. \\
-\code{preserve-roi} & Preset, ROI=240/255, fons=128 & Imposa dos nivells.
-No usa $Q_{adaptive}$ dins la ROI. \\
+\code{q204} & Q explícita & Tots els blocs reben Q=204. No usa ROI ni target.
+& Q-map base i comparació uniforme. \\
+\code{global\_target} & MSE o PSNR objectiu & La calibració calcula un únic
+$Q^\star$ i tots els blocs reben aquest valor. & Ruta mesurada global. \\
+\code{adaptive\_s8} & Error relatiu per bloc & Cada bloc rep
+$Q_i=\operatorname{clip}(204+8z_i)$, amb mitjana propera a 204. & Ruta
+mesurada adaptativa. \\
+\code{focus\_bgq128} & Preset + base adaptativa & ROI:
+$\operatorname{clip}(Q_{\mathrm{adaptive},i}+16)$; fons: Q128. & Ruta amb
+preset i fons Q128. \\
+\code{preserve-roi} & Preset + Q fixa ROI/fons & ROI: Q240 o Q255; fons: Q128.
+No usa base adaptativa dins la ROI. & Rutes preserve Q240/Q255. \\
 \bottomrule
 \end{longtable}
+\endgroup
 
-\section{Presets de la configuració final}
+\section{Modes auxiliars}
 
-\begin{longtable}{p{2.9cm}p{2.2cm}p{1.7cm}p{2.2cm}p{4.6cm}}
-\caption{Presets inclosos al bundle final i threshold aplicat.}\label{tab:all_presets}\\
+Hi ha variants implementades que ajuden a reproduir campanyes de cribratge, però
+no són les rutes principals de lectura de la memòria:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}X}
 \toprule
-Preset & Magnitud & Condició & Estat & Interpretació \\
+Variant & Ús de reproducció \\
+\midrule
+\code{boost-only} & Manté la base adaptativa al fons i incrementa Q només a la
+ROI. Variant disponible al generador semàntic. \\
+\code{focus\_bgpen24} & Configuració auxiliar del full C-only: reforça ROI i
+redueix el fons respecte de la base adaptativa, sense imposar Q128. \\
+\code{target-focus} & Variant que calcula Q dins la ROI a partir d'un objectiu
+de MSE o PSNR; correspon a la ruta \code{target\_focus\_bgq128\_measured} quan
+el fons es fixa a Q128. \\
+\bottomrule
+\end{tabularx}
+\caption{Modes auxiliars documentats per traçabilitat. No substitueixen els
+modes principals de la Taula~\ref{tab:app_main_modes}.}
+\label{tab:app_aux_modes}
+\end{table}
+
+Les tres variants comparteixen notació. Sigui $m_i$ la màscara generada pel
+preset, amb $m_i=1$ dins la ROI i $m_i=0$ al fons. Sigui
+$Q_{\mathrm{adaptive},i}$ la base adaptativa del bloc. La funció
+$\operatorname{clip}(\cdot)$ limita el resultat al rang de Q permès.
+
+\paragraph{\code{boost-only}.}
+Aquesta variant només modifica la ROI. El fons queda igual que a la base
+adaptativa:
+
+\begin{equation}
+Q_i^{boost}=
+\begin{cases}
+\operatorname{clip}(Q_{\mathrm{adaptive},i}+b), & m_i=1,\\
+Q_{\mathrm{adaptive},i}, & m_i=0.
+\end{cases}
+\end{equation}
+
+El paràmetre $b$ és el reforç de primer pla. Aquesta política és útil per
+executar una variant en què només canvien els blocs marcats com a ROI.
+
+\paragraph{\code{focus\_bgpen24}.}
+Aquesta configuració combina reforç de ROI i penalització relativa del fons:
+
+\begin{equation}
+Q_i^{bgpen24}=
+\begin{cases}
+\operatorname{clip}(Q_{\mathrm{adaptive},i}+16), & m_i=1,\\
+\operatorname{clip}(Q_{\mathrm{adaptive},i}-24), & m_i=0.
+\end{cases}
+\end{equation}
+
+A diferència de \code{focus\_bgq128}, el fons no queda fixat a Q128. Cada bloc
+de fons conserva la seva variació adaptativa, però amb una penalització de 24
+unitats de Q.
+
+\paragraph{\code{target-focus}.}
+Aquesta variant substitueix el reforç fix de la ROI per una decisió basada en
+un objectiu de qualitat. Dins la ROI, el valor $Q_{\mathrm{target}}$ es calcula
+a partir d'un MSE o PSNR objectiu mitjançant la calibració fixed-quality. El
+fons pot quedar fixat o penalitzat segons la configuració concreta:
+
+\begin{equation}
+Q_i^{target}=
+\begin{cases}
+Q_{\mathrm{target}}, & m_i=1,\\
+Q_{\mathrm{fons}}, & m_i=0\ \text{si es fixa un fons},\\
+\operatorname{clip}(Q_{\mathrm{adaptive},i}-p), & m_i=0\ \text{si es penalitza}.
+\end{cases}
+\end{equation}
+
+La utilitat d'aquest mode és provar una ROI guiada directament per un objectiu
+de qualitat, en lloc d'un reforç constant.
+
+\section{Presets automàtics}
+
+Els presets transformen una magnitud derivada de la imatge en una màscara ROI.
+La Taula~\ref{tab:app_presets} és una taula de consulta de la configuració
+pública. Els valors coincideixen amb \code{config/auto\_thresholds\_lambda005.tsv}
+quan el preset forma part de la configuració ajustada. El preset \code{clouds}
+també apareix al full C-only com a complement de \code{cloud\_avoid}; es
+documenta aquí per coherència amb el disseny factorial.
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{p{2.6cm}p{3.1cm}p{1.7cm}p{6.5cm}}
+\caption{Presets automàtics i llindars de la configuració \code{lambda005}.}
+\label{tab:app_presets}\\
+\toprule
+Preset & Magnitud i bandes & Condició & Lectura i limitació principal \\
 \midrule
 \endfirsthead
 \toprule
-Preset & Magnitud & Condició & Estat & Interpretació \\
+Preset & Magnitud i bandes & Condició & Lectura i limitació principal \\
 \midrule
 \endhead
-\path{cloud_avoid} & CBY clear & $\leq0,50$ & Operatiu & Protegeix blocs
-classificats com a no-núvol pel detector disponible. Sense B11 usa fallback
-visible i no una detecció completa. \\
-\path{local_contrast} & desviació visible & $\geq0,035$ & Operatiu & Prioritza
-textures i vores en B02, B03 i B04. No representa una coberta física. \\
-\path{high_ndvi} & NDVI & $\geq0,50$ & Operatiu & Vegetació densa. Promocionat
-després de tres casos CSMR mid-roi consistents. \\
-\code{vegetation} & NDVI & $\geq0,40$ & Referència & Vegetació segons el
-threshold de referència estable del full. \\
-\path{vegetation_green} & GNDVI & $\geq0,50$ & Referència & Sensibilitat a la
-banda verda en lloc de la vermella. \\
-\code{chlorophyll} & NDCI & $\geq0,10$ & Referència & Proxy espectral basat en
-B05 i B04; la interpretació física depèn del domini. \\
-\path{low_ndvi} & NDVI & $\leq0,15$ & Experimental & Agrupa valors negatius i
-positius baixos. Pot incloure aigua, sòl nu i cobertes no vegetades; no és un
-detector exclusiu de ciutat. \\
-\path{dark_regions} & mitjana visible & $\leq0,26$ & Experimental & Selecciona
-blocs foscos; en algunes escenes la ROI és massa ampla. \\
-\path{water_body} & NDWI & $\geq0,10$ & Experimental & Candidat d'aigua. Només
-un cas del threshold nou va arribar a CSMR. \\
+\code{cloud\_avoid} & Fracció CBY baixa, B02/B03/B04 & $\leq0,50$ &
+Família núvol/no-núvol. Sense B11/SWIR és un fallback visible, no una detecció
+completa de núvols. \\
+\code{clouds} & Fracció CBY alta, B02/B03/B04 & $\geq0,50$ & Complement de
+\code{cloud\_avoid}; comparteix la limitació de no disposar de B11/SWIR. \\
+\code{local\_contrast} & Desviació visible, B02/B03/B04 & $\geq0,035$ &
+Textura visible. No representa una classe física; selecciona variació local. \\
+\code{high\_ndvi} & NDVI, B08/B04 & $\geq0,50$ & Vegetació amb criteri més
+restrictiu que \code{vegetation}. \\
+\code{vegetation} & NDVI, B08/B04 & $\geq0,40$ & Vegetació amb llindar empíric
+del dataset. \\
+\code{vegetation\_green} & GNDVI, B08/B03 & $\geq0,50$ & Vegetació amb banda
+verda; la lectura no és idèntica a NDVI. \\
+\code{chlorophyll} & NDCI, B05/B04 & $\geq0,10$ & Proxy de clorofil·la; la
+interpretació física és limitada sense més context biofísic. \\
+\code{low\_ndvi} & NDVI, B08/B04 & $\leq0,15$ & NDVI baix; pot agrupar sòl,
+cobertes no vegetades, ombres, aigua o valors negatius. \\
+\code{dark\_regions} & Mitjana visible, B02/B03/B04 & $\leq0,26$ & Brillantor
+visible baixa; pot generar ROI àmplies si l'escena és globalment fosca. \\
+\code{water\_body} & NDWI, B03/B08 & $\geq0,10$ & Candidat d'aigua simple, no
+una classificació hidrològica completa. \\
 \bottomrule
 \end{longtable}
+\endgroup
 
-Els índexs normalitzats tenen la forma:
+Els índexs normalitzats utilitzen la forma:
 
 \begin{equation}
 I(A,B)=\frac{A-B}{A+B+\epsilon},
 \end{equation}
 
-on $\epsilon$ evita divisió per zero. NDVI usa B08 i B04; GNDVI, B08 i B03;
-NDCI, B05 i B04; NDWI, B03 i B08. Els thresholds són hiperparàmetres empírics
-auditats sobre el dataset del projecte, no constants universals de teledetecció
-\cite{rouse1974ndvi,mcfeeters1996ndwi,gitelson1996gndvi,mishra2012ndci}.
+on $\epsilon$ evita divisions per zero. Les correspondències són: NDVI amb B08 i
+B04; GNDVI amb B08 i B03; NDCI amb B05 i B04; NDWI amb B03 i B08. Els llindars
+són paràmetres de configuració del projecte, no constants universals de
+teledetecció \cite{rouse1974ndvi,gitelson1996gndvi,mishra2012ndci,mcfeeters1996ndwi}.
 
-\section{Combinació de preset i política}
+\section{Cobertura ROI}
 
-Per un bloc $i$, el preset produeix una màscara binària $m_i$. La política
-focus produeix:
-
-\begin{equation}
-Q_i^{focus}=
-\begin{cases}
-\operatorname{clip}(Q_{adaptive,i}+16), & m_i=1,\\
-128, & m_i=0.
-\end{cases}
-\end{equation}
-
-Preserve-roi produeix:
+La cobertura ROI és el percentatge de blocs marcats pel preset:
 
 \begin{equation}
-Q_i^{preserve}=
-\begin{cases}
-240\ \text{o}\ 255, & m_i=1,\\
-128, & m_i=0.
-\end{cases}
+C=100\frac{\sum_i m_i}{1024}.
 \end{equation}
 
-La mateixa màscara pot alimentar qualsevol de les dues polítiques. Aquesta
-propietat permet atribuir una diferència de resultat a la regla de qualitat i
-no a una selecció espacial diferent.
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{2.5cm}p{3.2cm}X}
+\toprule
+Etiqueta & Rang de cobertura & Ús interpretatiu \\
+\midrule
+\code{no\_roi} & $C=0$ & Cap bloc rep tractament de ROI. \\
+\code{low\_roi} & $0<C<10\%$ & ROI petita; pot ser sensible al veïnat de blocs de fons. \\
+\code{mid\_roi} & $10\%\leq C\leq70\%$ & Cobertura intermèdia, útil per comparar ROI i fons. \\
+\code{high\_roi} & $70\%<C<100\%$ & ROI ampla; queda poc fons per assumir degradació. \\
+\code{all\_roi} & $C=100\%$ & Tota la imatge és ROI i desapareix la redistribució ROI/fons. \\
+\bottomrule
+\end{tabularx}
+\caption{Etiquetes de cobertura utilitzades en l'anàlisi. No són presets i no
+modifiquen el Q-map.}
+\label{tab:app_roi_coverage}
+\end{table}
 
-\section{Classificació de cobertura}
+Aquestes etiquetes només classifiquen casos després de calcular la màscara. No
+canvien cap llindar ni cap valor Q. Són útils per detectar situacions en què una
+política espacial pot perdre sentit: ROI buida, ROI total o ROI massa dispersa.
 
-La cobertura $C$ és el percentatge de blocs amb $m_i=1$. Després de generar la
-màscara, l'anàlisi etiqueta:
+\section{Correspondència amb fitxers públics}
 
-\begin{equation}
-\begin{array}{ll}
-\code{no\_roi}:& C=0,\\
-\code{low\_roi}:&0<C<10\%,\\
-\code{mid\_roi}:&10\%\leq C\leq70\%,\\
-\code{high\_roi}:&70\%<C<100\%,\\
-\code{all\_roi}:&C=100\%.
-\end{array}
-\end{equation}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}p{4.1cm}X}
+\toprule
+Element & Fitxer públic & Relació amb la reproducció \\
+\midrule
+Llindars de presets & \path{config/auto_thresholds_lambda005.tsv} &
+Llegeix els llindars que fan servir les rutes amb presets automàtics. \\
+Calibració Q/lambda & \path{config/fq_calibration_lambda005.tsv} &
+Proporciona l'escala i coeficients necessaris per convertir objectius de
+qualitat en Q. \\
+Dataset RAW & \path{data/Sentinel2A_crop_test/} & Proporciona els retalls
+multiespectrals per executar exemples públics. \\
+Guia de reproducció & \path{docs/informe_final/AppendixA/text_app_a.tex} &
+Conté les comandes; aquest apèndix només n'especifica els paràmetres. \\
+\bottomrule
+\end{tabularx}
+\caption{Fitxers públics que materialitzen la configuració descrita en aquest
+apèndix.}
+\label{tab:app_public_config_files}
+\end{table}
 
-Les etiquetes no modifiquen el preset. S'utilitzen per separar casos on es pot
-mesurar una redistribució real de casos degenerats. Si $C=0$, tota la imatge
-rep tractament de fons; si $C=100\%$, no existeix fons que pugui assumir la
-distorsió. Si la ROI és molt petita i dispersa, el camp receptiu de la xarxa
-pot fer que blocs veïns a baixa qualitat afectin la reconstrucció de la regió
-protegida.
-\fi
+Aquests fitxers permeten reproduir la ruta pública descrita a
+l'Apèndix~\ref{app:reproducibility}. Si es canvien pesos, bandes, normalització
+o escala de lambda, aquests fitxers també s'han de revisar perquè el Q-map
+continuï representant la qualitat prevista.

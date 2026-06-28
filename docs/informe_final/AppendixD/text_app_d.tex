@@ -3,78 +3,131 @@
 \fancyhead[RE]{\slshape \textsf{Apèndix \thechapter.\ Ús d'IA}}
 \fancyhead[LO]{\slshape \textsf{\nouppercase \rightmark}}
 
-\section*{Pendent de fer}
-\iffalse
+\section{Objectiu de la declaració}
 
-\section{Abast de l'assistència}
+Aquest apèndix declara l'ús d'eines d'intel·ligència artificial generativa en
+la preparació del projecte i de la memòria. La finalitat és deixar clar en
+quines parts s'ha utilitzat suport automàtic, quins controls s'han aplicat i
+quina responsabilitat manté l'autor sobre el resultat final.
 
-Durant el desenvolupament s'ha utilitzat una eina d'intel·ligència artificial
-generativa, OpenAI Codex, com a assistent de programació i redacció. Els usos
-principals han estat:
+L'eina principal utilitzada ha estat OpenAI Codex, emprada com a assistent de
+programació, redacció i revisió. Aquest ús ha estat instrumental: l'eina ha
+ajudat a inspeccionar el repositori, proposar fragments de codi o text,
+organitzar comprovacions i detectar incoherències, però no ha substituït
+l'execució dels experiments ni la interpretació final dels resultats.
+
+Les xifres de la memòria no provenen d'una resposta generada per llenguatge.
+Provenen de les execucions del pipeline C, de CSMR, de Raspberry i dels
+extractes públics indicats a l'Apèndix~\ref{app:evidence}. Les comandes de
+reproducció i verificació es documenten a l'Apèndix~\ref{app:reproducibility},
+i la configuració de modes i presets a l'Apèndix~\ref{app:config}.
+
+\section{Parts assistides amb IA}
+
+La Taula~\ref{tab:ai_assisted_parts} resumeix les parts del treball on s'ha
+utilitzat suport d'IA generativa. La columna final indica com s'ha controlat
+cada ús abans d'incorporar-lo a la memòria o al repositori.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.0cm}X X}
+\toprule
+Àmbit & Ús de la IA & Control aplicat \\
+\midrule
+Codi C i Python & Ajuda per revisar estructura, proposar scripts
+d'orquestració i detectar incoherències entre rutes C, CSMR i Raspberry. &
+Compilació, execució de tests, lectura manual del codi i comparació amb
+artefactes generats. \\
+Anàlisi de resultats & Suport per agregar CSV, revisar fórmules, connectar
+taules amb checkpoints i preparar extractes públics. & Verificació amb
+fitxers font, població, unitat, baseline i registre d'evidències. \\
+Redacció \LaTeX & Propostes de redacció, reestructuració de capítols,
+millora de captions i organització d'apèndixs. & Revisió humana, compilació
+del PDF i decisió final de redacció segons el criteri de l'autor. \\
+Figures i taules & Ajuda per decidir quines figures o taules explicaven millor
+els resultats i per documentar-ne la lectura. & Les figures provenen de dades
+generades o extractes públics; les captions s'han revisat manualment. \\
+Revisió de coherència & Cerca de contradiccions sobre \code{q204},
+\code{adaptive\_s8}, CSMR, Raspberry, Q-map i taula precalibrada. & Validació
+creuada amb els capítols, apèndixs A--C i fitxers del repositori. \\
+\bottomrule
+\end{tabularx}
+\caption{Parts del projecte assistides amb IA generativa i controls aplicats
+abans d'incorporar-les a la versió final.}
+\label{tab:ai_assisted_parts}
+\end{table}
+
+\section{Parts no substituïdes per IA}
+
+L'ús de la IA no substitueix les parts essencials del treball. En particular:
 
 \begin{itemize}[leftmargin=*]
-  \item inspeccionar i resumir l'estructura del repositori;
-  \item proposar scripts d'orquestració, anàlisi i validació;
-  \item ajudar a detectar inconsistències entre resultats, taules i text;
-  \item generar esborranys de codi, documentació i fragments LaTeX;
-  \item facilitar checks estàtics, compilacions i organització de checkpoints;
-  \item reformular explicacions a partir del feedback de revisió.
+  \item els experiments s'han executat amb el compressor, el descompressor, els
+  generadors de Q-map, CSMR i els scripts de Raspberry;
+  \item els valors de bitrate, PSNR, temps i cost computacional provenen de
+  fitxers i extractes identificats, no de prediccions de l'assistent;
+  \item les decisions metodològiques finals, l'abast del treball i la lectura
+  crítica dels resultats corresponen a l'autor;
+  \item les fonts bibliogràfiques s'han d'entendre com a responsabilitat de
+  l'autor, encara que la IA hagi ajudat a revisar-ne la coherència editorial;
+  \item la defensa del projecte, les limitacions i les conclusions són
+  responsabilitat acadèmica de l'autor.
 \end{itemize}
 
-L'eina no ha substituït l'execució dels experiments, la selecció dels objectius
-ni la validació final. Els binaris C, CSMR i Raspberry han produït els
-artefactes numèrics. Les xifres del document provenen dels checkpoints indicats
-a l'Apèndix~\ref{app:evidence}, no d'una estimació generada per llenguatge.
+També cal distingir aquesta declaració de l'objecte tècnic del projecte.
+SORTENY és un model neuronal de compressió d'imatges; no és una IA generativa de
+llenguatge. Els presets automàtics implementats per a la selecció de regions són
+regles deterministes sobre bandes i índexs espectrals, no decisions preses per
+un assistent conversacional.
 
-\section{Supervisió humana}
+\section{Mesures de verificació}
 
-L'autor ha revisat:
-
-\begin{enumerate}[leftmargin=*]
-  \item cada canvi abans d'incorporar-lo al repositori;
-  \item la compilació i els tests funcionals del codi;
-  \item la correspondència entre CSV, figures i afirmacions;
-  \item les fonts bibliogràfiques i les dades editorials disponibles;
-  \item la interpretació dels resultats i les limitacions;
-  \item la versió final en català.
-\end{enumerate}
-
-Quan una proposta de l'assistent no era compatible amb el codi existent, amb
-la metodologia o amb l'evidència, s'ha corregit o descartat. Les decisions
-tècniques i la responsabilitat sobre el contingut són de l'autor.
-
-\section{Mesures contra errors i fabricació}
-
-Per reduir el risc d'al·lucinacions o afirmacions no traçables s'han aplicat
-les mesures següents:
+Per reduir el risc d'errors, al·lucinacions o afirmacions no traçables s'han
+aplicat les mesures següents:
 
 \begin{itemize}[leftmargin=*]
-  \item no acceptar una xifra sense fitxer font i població identificable;
-  \item preferir fonts primàries, estàndards i documentació oficial;
-  \item compilar el document fins eliminar cites i referències sense resoldre;
-  \item separar resultats mesurats, inferències i treball futur;
-  \item no presentar proxies d'entropia o zlib com a bitrate real;
-  \item conservar scripts i manifests per repetir l'anàlisi;
-  \item verificar manualment les fórmules i les unitats.
+  \item compilar la memòria fins eliminar referències, cites i figures sense
+  resoldre;
+  \item executar comprovacions locals com \code{git diff --check}, tests C i
+  compilació del PDF;
+  \item separar explícitament resultats mesurats, proxies C-only i treball
+  futur;
+  \item no acceptar una xifra sense unitat, població, baseline i font pública o
+  origen arxivat;
+  \item publicar extractes CSV petits per verificar les xifres principals sense
+  necessitat de checkpoints complets;
+  \item documentar a l'Apèndix~\ref{app:reproducibility} com executar proves
+  bàsiques i com comprovar els extractes públics;
+  \item mantenir a l'Apèndix~\ref{app:evidence} la traçabilitat entre
+  afirmacions, fitxers públics i origen experimental.
 \end{itemize}
 
-\section{Autoria i originalitat}
+Aquestes mesures no eliminen la necessitat de revisió humana. La IA pot
+proposar una explicació convincent però incorrecta, confondre un proxy amb una
+mètrica final o avançar conclusions abans que estiguin demostrades. Per això
+les parts quantitatives de la memòria s'han vinculat a dades verificables i no
+a text generat.
 
-La memòria continua un treball previ del mateix autor
-\cite{anez2026treball}. Aquest antecedent es cita explícitament i no es copia
-literalment. El text actual reorganitza els fonaments necessaris perquè el
-document sigui autocontingut i identifica les contribucions noves: escala
-lambda005, control espacial, presets, CSMR, preserve-roi, optimització i
-avaluació Raspberry.
+\section{Reflexió crítica}
 
-L'ús de l'assistent no transfereix autoria ni responsabilitat. El projecte, la
-integració del sistema, els experiments, l'anàlisi crítica i la defensa de les
-decisions corresponen a l'autor.
+L'ús de la IA ha tingut un impacte positiu en tres aspectes. Primer, ha accelerat
+la navegació per un repositori gran, amb codi C, Python, figures, informes i
+checkpoints. Segon, ha ajudat a convertir feedback tècnic extens en canvis
+estructurats de la memòria. Tercer, ha facilitat revisions de coherència que són
+costoses manualment, com mantenir estable el baseline \code{q204}, separar
+\code{adaptive\_s8} com a control tècnic i no confondre CSMR amb el contenidor C.
 
-\section{Límits de la declaració}
+El risc principal és que l'assistent tendeixi a omplir buits amb formulacions
+plausibles. En aquest projecte això podia portar a tres errors especialment
+greus: atribuir a la taula precalibrada una funció que no tenia, presentar
+proxies C-only com a bitrate real, o afirmar viabilitat a bord més enllà de les
+proves disponibles. Aquest risc s'ha mitigat exigint traçabilitat, compilació,
+execució de scripts i revisió manual de les afirmacions.
 
-Aquesta declaració descriu l'ús de la IA en el projecte i la memòria. No
-implica que el sistema SORTENY executi un model generatiu de llenguatge. El
-còdec neuronal estudiat és un model de compressió entrenat prèviament; els
-presets automàtics implementats a bord són operacions deterministes en C.
-\fi
+També hi ha un impacte sobre l'autoria. La IA pot millorar la forma i suggerir
+alternatives, però no pot assumir la responsabilitat del criteri tècnic. En
+aquesta memòria, les contribucions del treball, la interpretació dels resultats
+i la decisió de què és una evidència suficient corresponen a l'autor. La IA s'ha
+utilitzat com a eina de suport, no com a substitut de l'aprenentatge, la
+validació ni la responsabilitat acadèmica.
